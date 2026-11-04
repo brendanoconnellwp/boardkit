@@ -396,6 +396,19 @@
 			}
 			speak( moved );
 		} ).catch( function ( err ) {
+			// The server wants a (future) date — e.g. one in the past was picked. Ask again, in place.
+			if ( err && err.code === 'bk_needs_date' && lanes[ to ].lane.sets_status === 'future' ) {
+				node.classList.remove( 'is-saving' );
+				node.removeAttribute( 'aria-busy' );
+				showNotice( errorMessage( err ) );
+				askDate( node, card, laneLabel( to ), function ( d ) {
+					send( d );
+				}, function () {
+					rollback();
+					speak( i18n.cancelled );
+				} );
+				return;
+			}
 			var current = err && err.code === 'bk_conflict' && err.data && err.data.card;
 			if ( current ) {
 				// Someone else moved or changed it: show it where it really is now.

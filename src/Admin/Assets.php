@@ -21,6 +21,16 @@ final class Assets {
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue' ] );
 	}
 
+	/**
+	 * Cache-busting version: the plugin version plus the file's modified time. BK_VERSION alone
+	 * stays the same while code changes between releases, so a browser keeps running a stale
+	 * board.js against a newer server (it did: a move into Scheduled sent no date).
+	 */
+	public static function version( string $relative ): string {
+		$mtime = @filemtime( BK_DIR . $relative );
+		return $mtime ? BK_VERSION . '.' . $mtime : BK_VERSION;
+	}
+
 	public function enqueue( string $hook_suffix ): void {
 		if ( $hook_suffix === '' || $hook_suffix !== $this->menu->hook_suffix() ) {
 			return;
@@ -30,10 +40,10 @@ final class Assets {
 			return;
 		}
 
-		wp_enqueue_style( self::HANDLE, BK_URL . 'assets/board.css', [], BK_VERSION );
+		wp_enqueue_style( self::HANDLE, BK_URL . 'assets/board.css', [], self::version( 'assets/board.css' ) );
 		// SortableJS 1.15.6 (MIT), vendored with its licence — see assets/vendor/VENDOR.md.
 		wp_register_script( 'boardkit-sortable', BK_URL . 'assets/vendor/sortable.min.js', [], '1.15.6', true );
-		wp_enqueue_script( self::HANDLE, BK_URL . 'assets/board.js', [ 'wp-api-fetch', 'wp-a11y', 'boardkit-sortable' ], BK_VERSION, true );
+		wp_enqueue_script( self::HANDLE, BK_URL . 'assets/board.js', [ 'wp-api-fetch', 'wp-a11y', 'boardkit-sortable' ], self::version( 'assets/board.js' ), true );
 
 		$config = [
 			'board'     => $board->id(),
