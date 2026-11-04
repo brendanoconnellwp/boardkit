@@ -4,7 +4,7 @@ Tags: kanban, editorial calendar, workflow, editorial
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 8.0
-Stable tag: 0.3.0
+Stable tag: 0.3.1
 License: GPLv2 or later
 
 A Kanban board and editorial calendar for WordPress content.
@@ -16,6 +16,10 @@ BoardKit adds two views of your posts to wp-admin: a board (cards in lanes such 
 It works on its own. With ColumnKit active, boards can use a ColumnKit view as their card fields and any editable fixed-choice column as a lane source.
 
 == Changelog ==
+
+= 0.3.1 =
+* Fixed: drag and drop didn't work when BoardKit was installed from the 0.3.0 release zip, because the drag library was left out of the zip. The keyboard and the ⋯ menu were unaffected.
+* Fixed: after an update, browsers could keep running the previous version of the board script. Its files now carry their own version.
 
 = 0.3.0 =
 * New: move cards between lanes three ways: drag and drop, the keyboard (select a card, press Space or Enter to pick it up, the arrow keys to choose a lane, Space or Enter to drop, Escape to cancel; a hint shows the keys while you move), or the card's ⋯ menu → Move to. On small screens, use the menu.

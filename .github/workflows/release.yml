@@ -89,29 +89,48 @@ jobs:
           set -euo pipefail
           STAGE="$RUNNER_TEMP/boardkit"
           mkdir -p "$STAGE"
+          # Leading '/' anchors each exclude to the plugin root. Unanchored, 'vendor' also matched
+          # assets/vendor/ and shipped v0.3.0 without SortableJS (no drag and drop).
           rsync -a \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.claude' \
-            --exclude='tests' \
-            --exclude='docs' \
-            --exclude='vendor' \
-            --exclude='node_modules' \
-            --exclude='coverage' \
-            --exclude='.phpunit.cache' \
-            --exclude='.phpunit.result.cache' \
-            --exclude='composer.json' \
-            --exclude='composer.lock' \
-            --exclude='phpunit.xml.dist' \
-            --exclude='PLAN.md' \
-            --exclude='spec.md' \
-            --exclude='CLAUDE.md' \
-            --exclude='.gitignore' \
-            --exclude='.gitattributes' \
-            --exclude='.editorconfig' \
+            --exclude='/.git' \
+            --exclude='/.github' \
+            --exclude='/.claude' \
+            --exclude='/.playwright-mcp' \
+            --exclude='/tests' \
+            --exclude='/docs' \
+            --exclude='/vendor' \
+            --exclude='/node_modules' \
+            --exclude='/coverage' \
+            --exclude='/.phpunit.cache' \
+            --exclude='/.phpunit.result.cache' \
+            --exclude='/composer.json' \
+            --exclude='/composer.lock' \
+            --exclude='/phpunit.xml.dist' \
+            --exclude='/PLAN.md' \
+            --exclude='/spec.md' \
+            --exclude='/CLAUDE.md' \
+            --exclude='/.gitignore' \
+            --exclude='/.gitattributes' \
+            --exclude='/.editorconfig' \
             --exclude='*.log' \
             --exclude='.DS_Store' \
             ./ "$STAGE/"
+
+          # Every file the plugin loads must be in the zip — fail the release, don't ship it broken.
+          for f in boardkit.php uninstall.php readme.txt src/Plugin.php assets/board.js assets/board.css assets/vendor/sortable.min.js assets/vendor/sortable.LICENSE; do
+            if [ ! -f "$STAGE/$f" ]; then
+              echo "::error::Release zip would be missing $f"
+              exit 1
+            fi
+          done
+          # …and no development files.
+          for d in tests docs vendor .github; do
+            if [ -e "$STAGE/$d" ]; then
+              echo "::error::Release zip would include $d/"
+              exit 1
+            fi
+          done
+
           ( cd "$RUNNER_TEMP" && zip -rq "$GITHUB_WORKSPACE/boardkit-${VERSION}.zip" boardkit )
           echo "Built boardkit-${VERSION}.zip:"
           unzip -l "boardkit-${VERSION}.zip"
