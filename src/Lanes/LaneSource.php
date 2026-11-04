@@ -27,6 +27,13 @@ interface LaneSource {
 	/** Which of the board's lanes a post is in, or null (Unsorted). */
 	public function lane_of( \WP_Post $post, Board $board ): ?string;
 
-	/** @return bool|\WP_Error true on success (never false); WP_Error data is ['status' => int]. */
-	public function move( \WP_Post $post, string $to, Board $board ): bool|\WP_Error;
+	/**
+	 * @param array{date?: string} $opts date: site-local 'Y-m-d H:i' picked on the board, for
+	 *                                   lanes that schedule the post.
+	 * @return bool|\WP_Error true on success (never false); WP_Error data is ['status' => int].
+	 */
+	public function move( \WP_Post $post, string $to, Board $board, array $opts = [] ): bool|\WP_Error;
+
+	/** The WordPress status moving into $lane sets ('' = none), so the UI can ask for a date for 'future'. */
+	public function status_set_by( Board $board, string $lane ): string;
 }

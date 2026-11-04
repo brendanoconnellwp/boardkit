@@ -66,7 +66,27 @@ final class Assets {
 				/* translators: %s: lane name */
 				'targetSame' => __( '%s (current lane)', 'boardkit' ),
 				'cancelled'  => __( 'Move cancelled.', 'boardkit' ),
-				'cardHelp'   => __( 'Press Space to pick up this card and move it to another lane.', 'boardkit' ),
+				'cardHelp'   => __( 'Keyboard: select a card with Tab, press Space or Enter to pick it up, the arrow keys to choose a lane, and Space or Enter to drop it.', 'boardkit' ),
+				/* translators: %s: post title */
+				'hint'       => __( 'Moving “%s” — ← → choose a lane · Space or Enter to drop · Esc to cancel', 'boardkit' ),
+				/* translators: %s: status label, e.g. "Published" */
+				'statusNow'  => __( 'Status is now %s.', 'boardkit' ),
+				// Under a lane's name: what dropping a card there does to the post.
+				'sets'       => [
+					'draft'   => __( 'Sets status: Draft', 'boardkit' ),
+					'pending' => __( 'Sets status: Pending Review', 'boardkit' ),
+					'future'  => __( 'Schedules the post', 'boardkit' ),
+					'publish' => __( 'Publishes the post', 'boardkit' ),
+					'private' => __( 'Publishes privately', 'boardkit' ),
+				],
+				/* translators: %s: lane name, e.g. "Scheduled" */
+				'when'       => __( 'Publish on (%s)', 'boardkit' ),
+				/* translators: %s: post title */
+				'whenLabel'  => __( 'Choose when to publish “%s”', 'boardkit' ),
+				/* translators: %s: timezone, e.g. "Australia/Sydney" */
+				'siteTime'   => __( 'Site time: %s', 'boardkit' ),
+				'schedule'   => __( 'Schedule', 'boardkit' ),
+				'cancel'     => __( 'Cancel', 'boardkit' ),
 			],
 		];
 		wp_add_inline_script( self::HANDLE, 'window.BoardKitConfig = ' . wp_json_encode( $config, self::JSON_FLAGS ) . ';', 'before' );

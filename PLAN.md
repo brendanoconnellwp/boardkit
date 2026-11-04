@@ -31,6 +31,12 @@ What checking `../columnkit` turned up. Items 1–5 change the design. Items 6�
 | 1. Several post types per board? | **One per board in v1.** Keep the `post_types` array. `normalise()` cuts it to `[0]`. | Lane sources, taxonomies and capabilities all depend on the post type. Several types multiply the §7.2 rules. |
 | 2–6 | Leave for v2. Nothing in v1 should block them. | Keep the board schema versioned. `_bk_log` already gives notifications a place to hook in. |
 
+**Changed after trying v0.3 (2026-11-04, decided by the user):**
+
+- **Stage lanes can also set the WordPress status.** The spec (§4.2) kept stage and status fully separate. In use, that was confusing: the starter board had lanes called Draft, Scheduled and Published that changed nothing in WordPress. Now each stage lane has an optional `status`. The starter board is Pitch → Writing → Editing → Ready (`pending`) → Scheduled (`future`) → Published (`publish`). Every status change goes through `Moves\StatusChange`, so the §7.2 publish rules apply to stage boards too. Lanes without a status stay stage-only, so moving a published post to "Writing" doesn't unpublish it.
+- **Scheduling asks for a date on the board.** Dropping a card into a lane that sets `future` opens a date-and-time picker on the card, in site time with the timezone shown. Cancelling puts the card back. Previously this waited for the calendar (Phase 6).
+- **Existing starter boards migrate on read** (schema 1 → 2), but only if their lanes are exactly the old starter lanes. Lane values (the stage term slugs) are kept, so posts stay where they are. An edited board is never changed, and nothing on it starts publishing.
+
 Other decisions this plan makes:
 
 - **Store hand-picked lane order on the board**, not on terms. Term order means term meta and another query.

@@ -59,6 +59,9 @@ final class MoveServiceTest extends TestCase {
 		Functions\when( 'clean_post_cache' )->justReturn( null );
 		Functions\when( 'wp_slash' )->returnArg();
 		Functions\when( 'current_time' )->justReturn( '2026-11-04 12:00:00' );
+		// Site timezone UTC+10 for the date tests.
+		Functions\when( 'get_date_from_gmt' )->alias( static fn( $g ) => gmdate( 'Y-m-d H:i:s', strtotime( $g . ' UTC' ) + 36000 ) );
+		Functions\when( 'get_gmt_from_date' )->alias( static fn( $l ) => gmdate( 'Y-m-d H:i:s', strtotime( $l . ' UTC' ) - 36000 ) );
 		Functions\when( 'get_post_meta' )->alias( fn( $id, $key ) => $this->meta[ $key ] ?? '' );
 		Functions\when( 'update_post_meta' )->alias( function ( $id, $key, $value ) {
 			$this->meta[ $key ] = $value;
@@ -231,6 +234,13 @@ final class MoveServiceTest extends TestCase {
 		$this->assertSame( [], $this->updates, 'nothing written' );
 	}
 
+	public function test_permission_is_checked_before_the_date(): void {
+		// A Contributor with no date must hear "not allowed", not be asked to pick a date.
+		$this->post->post_date_gmt = '0000-00-00 00:00:00';
+		$r = $this->status_move( 'future' );
+		$this->assertSame( 'bk_cannot_publish', $r->get_error_code() );
+	}
+
 	public function test_contributor_can_submit_for_review(): void {
 		$this->assertInstanceOf( \WP_Post::class, $this->status_move( 'pending' ) );
 		$this->assertSame( 'pending', $this->updates[0]['post_status'] );
@@ -267,5 +277,82 @@ final class MoveServiceTest extends TestCase {
 		$this->caps['publish_articles'] = true;
 		$this->status_move( 'publish', 'future' );
 		$this->assertSame( '2026-11-04 12:00:00', $this->updates[0]['post_date'] );
+	}
+
+	public function test_picked_date_is_site_time_converted_to_gmt(): void {
+		$this->caps['publish_articles'] = true;
+		$this->post->post_date_gmt = '0000-00-00 00:00:00';
+		$this->post->post_status   = 'draft';
+		$r = $this->moves->move( self::status_board(), self::ID, 'future', 'draft', '', [ 'date' => '2031-03-05T09:30' ] );
+		$this->assertInstanceOf( \WP_Post::class, $r );
+		$this->assertSame( '2031-03-04 23:30:00', end( $this->updates )['post_date_gmt'], 'UTC+10 → GMT' );
+		$this->assertSame( '2031-03-05 09:30:00', end( $this->updates )['post_date'] );
+	}
+
+	public function test_picked_date_must_be_real_and_in_the_future(): void {
+		$this->caps['publish_articles'] = true;
+		foreach ( [ '2001-01-01 09:00', '2031-02-30 09:00', 'tomorrow', '2031-01-01 25:00', '' ] as $bad ) {
+			$this->post->post_date_gmt = '0000-00-00 00:00:00';
+			$r = $this->moves->move( self::status_board(), self::ID, 'future', 'draft', '', [ 'date' => $bad ] );
+			$this->assertSame( 'bk_needs_date', $r instanceof \WP_Error ? $r->get_error_code() : 'saved', "date '$bad'" );
+		}
+		$this->assertSame( [], $this->updates );
+	}
+
+	// ---- stage lanes that also set a status (decision 2026-11-04) -----------------------
+
+	private static function editorial_board(): Board {
+		return Board::from_normalised( BoardRepository::normalise( [
+			'schema'     => 2,
+			'post_types' => [ 'article' ],
+			'lanes'      => [
+				[ 'value' => 'pitch' ],
+				[ 'value' => 'ready', 'status' => 'pending' ],
+				[ 'value' => 'scheduled', 'status' => 'future' ],
+				[ 'value' => 'published', 'status' => 'publish' ],
+			],
+		], 'b' ) );
+	}
+
+	public function test_stage_lane_with_status_sets_stage_and_status(): void {
+		$this->caps += [ 'assign_stages' => true, 'publish_articles' => true ];
+		$r = $this->moves->move( self::editorial_board(), self::ID, 'published', 'pitch', '' );
+		$this->assertInstanceOf( \WP_Post::class, $r );
+		$this->assertSame( 'publish', $this->updates[0]['post_status'] );
+		$this->assertSame( [ 'moved' ], $this->terms );
+		$this->assertSame( [ 'status', 'stage' ], array_column( $this->meta[ Meta::LOG ], 'field' ), 'both changes logged, newest first' );
+	}
+
+	public function test_contributor_dragging_to_published_changes_nothing_at_all(): void {
+		$this->caps += [ 'assign_stages' => true ];
+		$r = $this->moves->move( self::editorial_board(), self::ID, 'published', 'pitch', '' );
+		$this->assertSame( 403, self::http( $r ) );
+		$this->assertSame( [], $this->updates, 'status untouched' );
+		$this->assertSame( [ 'pitch' ], $this->terms, 'stage untouched too' );
+		$this->assertArrayNotHasKey( Meta::LOG, $this->meta );
+	}
+
+	public function test_contributor_can_drag_to_ready_which_submits_for_review(): void {
+		$this->caps += [ 'assign_stages' => true ];
+		$this->assertInstanceOf( \WP_Post::class, $this->moves->move( self::editorial_board(), self::ID, 'ready', 'pitch', '' ) );
+		$this->assertSame( 'pending', $this->updates[0]['post_status'] );
+	}
+
+	public function test_scheduled_lane_uses_the_picked_date(): void {
+		$this->caps += [ 'assign_stages' => true, 'publish_articles' => true ];
+		$this->post->post_date_gmt = '0000-00-00 00:00:00';
+		$r = $this->moves->move( self::editorial_board(), self::ID, 'scheduled', 'pitch', '' );
+		$this->assertSame( 'bk_needs_date', $r->get_error_code(), 'no date picked and none on the post' );
+		$this->assertSame( [ 'pitch' ], $this->terms );
+
+		$this->assertInstanceOf( \WP_Post::class, $this->moves->move( self::editorial_board(), self::ID, 'scheduled', 'pitch', '', [ 'date' => '2031-03-05 09:30' ] ) );
+		$this->assertSame( 'future', $this->updates[0]['post_status'] );
+	}
+
+	public function test_stage_only_lane_leaves_status_alone(): void {
+		$this->caps += [ 'assign_stages' => true ];
+		$this->terms = [ 'ready' ];
+		$this->assertInstanceOf( \WP_Post::class, $this->moves->move( self::editorial_board(), self::ID, 'pitch', 'ready', '' ) );
+		$this->assertSame( [], $this->updates );
 	}
 }

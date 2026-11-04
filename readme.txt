@@ -18,9 +18,12 @@ It works on its own. With ColumnKit active, boards can use a ColumnKit view as t
 == Changelog ==
 
 = 0.3.0 =
-* New: move cards between lanes three ways: drag and drop, the keyboard (focus a card, Space to pick it up, the arrow keys to choose a lane, Space to drop, Escape to cancel), or the card's ⋯ menu → Move to. On small screens, use the menu.
+* New: move cards between lanes three ways: drag and drop, the keyboard (select a card, press Space or Enter to pick it up, the arrow keys to choose a lane, Space or Enter to drop, Escape to cancel; a hint shows the keys while you move), or the card's ⋯ menu → Move to. On small screens, use the menu.
+* New: a lane can also set the WordPress status. On the Editorial board, Ready submits the post for review, Scheduled schedules it, and Published publishes it. Pitch, Writing and Editing only track where the post is in your workflow. Each such lane says what it does under its name.
+* New: dropping a card into Scheduled asks when to publish it (in the site's timezone). Cancel puts the card back.
+* Changed: the starter Editorial board's lanes are now Pitch → Writing → Editing → Ready → Scheduled → Published. An unedited board from 0.2.0 is updated automatically, and posts stay in their lanes.
 * Moves show at once and are undone if the server refuses them. If someone else moved or changed the card first, it's redrawn where it really is, with a notice.
-* Each move is checked on the server against WordPress's own permissions. A Contributor can't publish or schedule a post by dragging it, and scheduling needs a future date.
+* Each move is checked on the server against WordPress's own permissions. A Contributor can't publish or schedule a post by dragging it. Dragging to Ready submits it for review.
 * Each post keeps a history of its last 50 moves.
 * Every move is announced to screen readers.
 

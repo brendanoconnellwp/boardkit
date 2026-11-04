@@ -40,6 +40,8 @@ final class CardsController {
 				'to'       => [ 'type' => 'string', 'required' => true, 'sanitize_callback' => [ BoardRepository::class, 'sanitize_lane_value' ] ],
 				'from'     => [ 'type' => 'string', 'required' => true, 'sanitize_callback' => [ BoardRepository::class, 'sanitize_lane_value' ] ],
 				'modified' => [ 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
+				// Site-local 'Y-m-d H:i' picked on the board when the target lane schedules the post.
+				'date'     => [ 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
 			],
 		] );
 	}
@@ -65,7 +67,8 @@ final class CardsController {
 			(int) $request['post_id'],
 			(string) $request['to'],
 			(string) $request['from'],
-			(string) $request['modified']
+			(string) $request['modified'],
+			[ 'date' => (string) $request['date'] ]
 		);
 
 		if ( $result instanceof WP_Error ) {

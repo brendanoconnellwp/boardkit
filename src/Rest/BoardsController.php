@@ -5,6 +5,7 @@ namespace BoardKit\Rest;
 
 use BoardKit\Boards\Board;
 use BoardKit\Boards\BoardRepository;
+use BoardKit\Moves\StatusChange;
 use BoardKit\Query\CardPresenter;
 use BoardKit\Query\CardQuery;
 use BoardKit\Query\Visibility;
@@ -95,7 +96,11 @@ final class BoardsController {
 	public static function board_payload( Board $board, array $counts ): array {
 		$lanes = [];
 		foreach ( $board->lanes() as $lane ) {
-			$lanes[] = $lane + [ 'count' => $counts[ $lane['value'] ] ?? 0, 'readonly' => false ];
+			// The WordPress status a move into this lane sets (the UI asks for a date for 'future').
+			$sets = $board->lane_kind() === 'status'
+				? ( in_array( $lane['value'], StatusChange::SETTABLE, true ) ? $lane['value'] : '' )
+				: (string) ( $lane['status'] ?? '' );
+			$lanes[] = $lane + [ 'count' => $counts[ $lane['value'] ] ?? 0, 'readonly' => false, 'sets_status' => $sets ];
 		}
 		$lanes[] = [
 			'value'    => Board::UNSORTED,
@@ -104,6 +109,7 @@ final class BoardsController {
 			'wip'      => 0,
 			'count'    => $counts[ Board::UNSORTED ] ?? 0,
 			'readonly' => true, // Cards can leave Unsorted but never be dropped into it (§4.3).
+			'sets_status' => '',
 		];
 		return [
 			'id'        => $board->id(),
@@ -113,7 +119,13 @@ final class BoardsController {
 			'sort'      => $board->sort(),
 			'lanes'     => $lanes,
 			'per_page'  => CardQuery::PER_PAGE,
+			'timezone'  => self::timezone_label(),
 		];
+	}
+
+	/** e.g. "UTC+10" or "Australia/Sydney" — shown next to the date picker (dates are site time). */
+	public static function timezone_label(): string {
+		return function_exists( 'wp_timezone_string' ) ? (string) wp_timezone_string() : 'UTC';
 	}
 
 	/** Only called after can_view() has confirmed the board exists. */

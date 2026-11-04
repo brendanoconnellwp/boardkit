@@ -36,9 +36,10 @@ final class MoveService {
 	/**
 	 * @param string $from     The lane the client last saw the card in (Board::UNSORTED for none).
 	 * @param string $modified post_modified_gmt as the client last saw it ('' to skip).
+	 * @param array{date?: string} $opts date: site-local date picked for a lane that schedules.
 	 * @return \WP_Post|WP_Error The post after the move. A 409 carries ['post' => current post].
 	 */
-	public function move( Board $board, int $post_id, string $to, string $from, string $modified ): \WP_Post|WP_Error {
+	public function move( Board $board, int $post_id, string $to, string $from, string $modified, array $opts = [] ): \WP_Post|WP_Error {
 		// Rule 1: the post exists and belongs to this board.
 		$post = $post_id > 0 ? get_post( $post_id ) : null;
 		if ( ! $post instanceof \WP_Post || $post->post_type !== $board->post_type() || $post->post_status === 'trash' ) {
@@ -66,9 +67,10 @@ final class MoveService {
 			return $post; // Already there: nothing to save, nothing to log.
 		}
 
+		$status_before = (string) $post->post_status;
 		self::$depth++;
 		try {
-			$result = $source->move( $post, $to, $board );
+			$result = $source->move( $post, $to, $board, $opts );
 		} finally {
 			self::$depth--;
 		}
@@ -76,10 +78,17 @@ final class MoveService {
 			return $result;
 		}
 
-		ActivityLog::add( $post->ID, $source->kind(), $current, $to );
 		clean_post_cache( $post->ID );
 		$fresh = get_post( $post->ID );
-		return $fresh instanceof \WP_Post ? $fresh : $post;
+		$fresh = $fresh instanceof \WP_Post ? $fresh : $post;
+
+		ActivityLog::add( $post->ID, $source->kind(), $current, $to );
+		// A stage lane that also set the WordPress status: log that separately, so the history
+		// says "published", not only "moved to Published".
+		if ( $source->kind() !== 'status' && $fresh->post_status !== $status_before ) {
+			ActivityLog::add( $post->ID, 'status', $status_before, (string) $fresh->post_status );
+		}
+		return $fresh;
 	}
 
 	public static function error( string $code, string $message, int $status ): WP_Error {

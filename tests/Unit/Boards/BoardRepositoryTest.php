@@ -69,13 +69,54 @@ final class BoardRepositoryTest extends TestCase {
 		$this->assertSame( 'stage', $board->lane_kind() );
 		$this->assertSame( 'post', $board->post_type() );
 		$this->assertSame( [ 'pitch', 'draft', 'in-review', 'approved', 'scheduled', 'published' ], $board->lane_values() );
+		$this->assertSame( [ 'Pitch', 'Writing', 'Editing', 'Ready', 'Scheduled', 'Published' ], array_column( $board->lanes(), 'label' ) );
+		$this->assertSame( [ '', '', '', 'pending', 'future', 'publish' ], array_column( $board->lanes(), 'status' ) );
+	}
+
+	/** The v0.2/v0.3 starter board, as stored. */
+	private static function v1_starter(): array {
+		$labels = [ 'pitch' => 'Pitch', 'draft' => 'Draft', 'in-review' => 'In Review', 'approved' => 'Approved', 'scheduled' => 'Scheduled', 'published' => 'Published' ];
+		$lanes  = [];
+		foreach ( $labels as $v => $l ) {
+			$lanes[] = [ 'value' => $v, 'label' => $l, 'color' => '#123456', 'wip' => 0 ];
+		}
+		return [ 'schema' => 1, 'id' => 'editorial', 'lane_source' => [ 'kind' => 'stage' ], 'lanes' => $lanes ];
+	}
+
+	public function test_untouched_v1_starter_board_migrates_on_read_keeping_values(): void {
+		$n = BoardRepository::normalise( self::v1_starter(), 'editorial' );
+		$this->assertSame( [ 'pitch', 'draft', 'in-review', 'approved', 'scheduled', 'published' ], array_column( $n['lanes'], 'value' ), 'stage term slugs kept: posts stay in their lanes' );
+		$this->assertSame( 'Writing', $n['lanes'][1]['label'] );
+		$this->assertSame( 'publish', $n['lanes'][5]['status'] );
+		$this->assertSame( '#123456', $n['lanes'][0]['color'], 'colours kept' );
+	}
+
+	public function test_edited_v1_board_is_not_migrated(): void {
+		$in                       = self::v1_starter();
+		$in['lanes'][1]['label'] = 'First draft';
+		$n                        = BoardRepository::normalise( $in, 'editorial' );
+		$this->assertSame( 'First draft', $n['lanes'][1]['label'] );
+		$this->assertSame( [ '', '', '', '', '', '' ], array_column( $n['lanes'], 'status' ), 'nothing silently starts publishing' );
+	}
+
+	public function test_v2_board_is_never_re_migrated(): void {
+		$in           = self::v1_starter();
+		$in['schema'] = 2; // e.g. someone deliberately set these labels back in v2
+		$this->assertSame( 'Draft', BoardRepository::normalise( $in, 'editorial' )['lanes'][1]['label'] );
+	}
+
+	public function test_lane_status_is_allowlisted_and_only_on_stage_boards(): void {
+		$n = BoardRepository::normalise( [ 'schema' => 2, 'lanes' => [ [ 'value' => 'a', 'status' => 'trash' ], [ 'value' => 'b', 'status' => 'publish' ] ] ], 'x' );
+		$this->assertSame( [ '', 'publish' ], array_column( $n['lanes'], 'status' ) );
+		$n = BoardRepository::normalise( [ 'lane_source' => [ 'kind' => 'status' ], 'lanes' => [ [ 'value' => 'draft', 'status' => 'publish' ] ] ], 'x' );
+		$this->assertSame( '', $n['lanes'][0]['status'], 'a status board lane IS its status' );
 	}
 
 	// ---- normalise ------------------------------------------------------------
 
 	public function test_normalise_fills_every_key_from_nothing(): void {
 		$n = BoardRepository::normalise( [], 'x' );
-		$this->assertSame( 1, $n['schema'] );
+		$this->assertSame( 2, $n['schema'] );
 		$this->assertSame( 'x', $n['label'] );
 		$this->assertSame( [ 'post' ], $n['post_types'] );
 		$this->assertSame( [ 'kind' => 'stage' ], $n['lane_source'] );

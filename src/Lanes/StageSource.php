@@ -6,6 +6,7 @@ namespace BoardKit\Lanes;
 use BoardKit\Boards\Board;
 use BoardKit\Editorial\StageTaxonomy;
 use BoardKit\Moves\MoveService;
+use BoardKit\Moves\StatusChange;
 
 final class StageSource implements LaneSource {
 	public function kind(): string {
@@ -52,7 +53,12 @@ final class StageSource implements LaneSource {
 		];
 	}
 
-	public function move( \WP_Post $post, string $to, Board $board ): bool|\WP_Error {
+	/**
+	 * Set the stage; if the lane also sets a WordPress status, set that too (StatusChange's rules).
+	 * Every check runs before anything is written, so a refused status change leaves the stage
+	 * untouched as well.
+	 */
+	public function move( \WP_Post $post, string $to, Board $board, array $opts = [] ): bool|\WP_Error {
 		// Rule 4: assign_terms for the taxonomy (its mapped cap, not a literal).
 		$tax = get_taxonomy( StageTaxonomy::TAXONOMY );
 		$cap = $tax && isset( $tax->cap->assign_terms ) ? (string) $tax->cap->assign_terms : '';
@@ -71,12 +77,30 @@ final class StageSource implements LaneSource {
 			return MoveService::error( 'bk_no_term', __( 'That stage is missing. Re-save the board.', 'boardkit' ), 500 );
 		}
 
+		// The lane's status first: it's the step that can be refused (publish rights, a date).
+		$status = $this->status_set_by( $board, $to );
+		if ( $status !== '' ) {
+			$changed = StatusChange::apply( $post, $status, (string) ( $opts['date'] ?? '' ) );
+			if ( $changed instanceof \WP_Error ) {
+				return $changed;
+			}
+		}
+
 		// One term per post: replace (append = false) fixes any post that somehow has several.
 		$set = wp_set_object_terms( $post->ID, [ (int) $term->term_id ], StageTaxonomy::TAXONOMY, false );
 		if ( $set instanceof \WP_Error ) {
 			return MoveService::error( 'bk_save_failed', $set->get_error_message(), 500 );
 		}
 		return true;
+	}
+
+	public function status_set_by( Board $board, string $lane ): string {
+		foreach ( $board->lanes() as $l ) {
+			if ( $l['value'] === $lane ) {
+				return (string) ( $l['status'] ?? '' );
+			}
+		}
+		return '';
 	}
 
 	public function lane_of( \WP_Post $post, Board $board ): ?string {

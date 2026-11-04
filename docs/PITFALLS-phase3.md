@@ -68,6 +68,37 @@ to move a card in `board.js`: drag, keyboard and the ⋯ menu.
 **Test/proof:** test page: a refused move puts the card back in its exact position with counts restored. A conflict moves it to the lane the server reports, with the new title.
 **Open:** in the first test-page run, one card's position and one lane count ended up wrong after a keyboard move followed by a refused move and a conflict. Six replays of the same sequence, with synthetic events and real input, never reproduced it. Watch for it in manual testing.
 
+## Stage lanes that set a status (added after trying v0.3)
+
+### 12. One copy of the status rules
+**What:** Stage lanes that publish or schedule need exactly the status board's rules. A second copy would drift.
+**How:** `Moves\StatusChange` holds them. `StatusSource::move()` and `StageSource::move()` both call `StatusChange::apply()`.
+**Test/proof:** `MoveServiceTest` "stage lanes that also set a status" section; smoke `phase3b` (19 checks).
+
+### 13. A refused status change must leave the stage alone too
+**What:** If the stage were written first, a Contributor dragging to Published would see "not allowed" but the card would still be recorded as Published.
+**How:** `StageSource::move()` runs the permission check and the status write *before* setting the term. A refusal returns before anything is written.
+**Test/proof:** `test_contributor_dragging_to_published_changes_nothing_at_all`; smoke "…and the stage did not change either".
+
+### 14. Permission before input
+**What:** The first version checked the date before the permission, so a Contributor dropping into Scheduled got "Pick a date" (400) when the answer was "not allowed" (403). The Phase 3 smoke test caught this regression.
+**How:** In `StatusChange::plan()`: no-op check → capabilities → date.
+**Test/proof:** `test_permission_is_checked_before_the_date`; smoke `phase3` "contributor → future is 403".
+
+### 15. Dates are site time
+**What:** `datetime-local` has no timezone. If the browser's zone were used, an editor in another timezone would schedule at the wrong hour.
+**How:** The picker is labelled "Site time: <timezone>" (from `wp_timezone_string()`). The server treats the value as site time and converts it with `get_gmt_from_date()`. Malformed or impossible dates (Feb 30, 25:00) and past dates return 400 `bk_needs_date`.
+**Test/proof:** `test_picked_date_is_site_time_converted_to_gmt`, `test_picked_date_must_be_real_and_in_the_future`; smoke `phase3b` with `Australia/Sydney` checks that 09:30 local is stored as 22:30 GMT the day before.
+**Known gap:** the *suggested* value ("tomorrow 9:00") is worked out in the browser's timezone. Only the suggestion can be off; what's submitted is always site time.
+
+### 16. Migrating the starter board without surprises
+**How:** `normalise()` upgrades a schema-1 board only if its lanes are exactly the old starter lanes (values, English labels, no statuses). It keeps lane values, so stage terms and posts stay put, and it keeps colours and WIP limits. Anything edited is left alone and gets no statuses.
+**Test/proof:** `test_untouched_v1_starter_board_migrates_on_read_keeping_values`, `test_edited_v1_board_is_not_migrated`, `test_v2_board_is_never_re_migrated`; on the AI Experiments site the existing board now reads Pitch → Writing → Editing → Ready → Scheduled → Published.
+
+### 17. Making the keyboard path discoverable
+**What:** In manual testing the only explanation of Space to pick up was screen-reader text, so the user found the ⋯ menu path instead.
+**How:** A visible tip under the board title, a visible hint bar while a card is picked up ("← → choose a lane · Space or Enter to drop · Esc to cancel"), Enter picks up as well as Space, and tabbing away is announced as a cancel. Lanes that change WordPress status say so under their name ("→ Publishes the post").
+
 ## Manual checklist
 - [x] Role matrix for moves (Admin, Editor, Author, Contributor, Subscriber, logged out): smoke `phase3`.
 - [x] Drag, keyboard and menu in the test page with a faked `apiFetch`.

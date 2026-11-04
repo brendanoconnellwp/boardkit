@@ -34,6 +34,10 @@
 	var sortables = [];
 	/** Keyboard pick-up state: { id, target } or null */
 	var picked = null;
+	/** The site's timezone name, shown next to the schedule picker. */
+	var timezone = '';
+	/** Visible keyboard instructions while a card is picked up. */
+	var hint = el( 'div', { class: 'bk-hint', hidden: true, 'aria-hidden': 'true' } );
 
 	// ---- helpers ---------------------------------------------------------------------------
 
@@ -201,7 +205,7 @@
 		node.addEventListener( 'focusout', function ( e ) {
 			// Leaving the card (not into its own menu button) cancels a keyboard pick-up.
 			if ( picked && picked.id === card.id && ! node.contains( e.relatedTarget ) ) {
-				cancelPick( false );
+				cancelPick( true );
 			}
 		} );
 		return node;
@@ -256,7 +260,13 @@
 			class: 'bk-lane' + ( lane.readonly ? ' is-readonly' : '' ),
 			'data-lane': lane.value,
 			style: lane.color ? '--bk-lane-color:' + lane.color : null,
-		}, [ el( 'h2', { class: 'bk-lane-head' }, [ toggle ] ), list, more ] );
+		}, [
+			el( 'h2', { class: 'bk-lane-head' }, [ toggle ] ),
+			// Say what a lane does to the post, so nobody drags to "Published" expecting a label.
+			lane.sets_status && i18n.sets[ lane.sets_status ] ? el( 'p', { class: 'bk-lane-sets', text: i18n.sets[ lane.sets_status ] } ) : null,
+			list,
+			more,
+		] );
 
 		var state = { lane: lane, section: section, list: list, countEl: countEl, more: more, count: lane.count, next: 0, loaded: false };
 		lanes[ lane.value ] = state;
@@ -334,8 +344,6 @@
 		if ( ! dragged ) {
 			lanes[ to ].list.insertBefore( node, lanes[ to ].list.firstChild );
 		}
-		node.classList.add( 'is-saving' );
-		node.setAttribute( 'aria-busy', 'true' );
 		setCount( from, -1 );
 		setCount( to, +1 );
 		syncEmpty( from );
@@ -344,10 +352,37 @@
 			node.focus();
 		}
 
+		/** Undo the optimistic move exactly. */
+		function rollback() {
+			setCount( to, -1 );
+			setCount( from, +1 );
+			node.classList.remove( 'is-saving' );
+			node.removeAttribute( 'aria-busy' );
+			putBack( node, home.list, home.index );
+			syncEmpty( from );
+			syncEmpty( to );
+			node.focus();
+		}
+
+		// A lane that schedules the post needs a date first: ask on the card (decision 2026-11-04).
+		if ( lanes[ to ].lane.sets_status === 'future' ) {
+			askDate( node, card, laneLabel( to ), function ( date ) {
+				send( date );
+			}, function () {
+				rollback();
+				speak( i18n.cancelled );
+			} );
+			return;
+		}
+		send( '' );
+
+		function send( date ) {
+		node.classList.add( 'is-saving' );
+		node.setAttribute( 'aria-busy', 'true' );
 		apiFetch( {
 			path: base + '/cards/' + id + '/move',
 			method: 'POST',
-			data: { to: to, from: from, modified: card.modified_gmt },
+			data: { to: to, from: from, modified: card.modified_gmt, date: date },
 		} ).then( function ( res ) {
 			var fresh = renderCard( res.card );
 			node.replaceWith( fresh );
@@ -355,13 +390,17 @@
 				fresh.focus();
 			}
 			showNotice( '' );
-			speak( sprintf( i18n.moved, res.card.title, laneLabel( to ) ) );
+			var moved = sprintf( i18n.moved, res.card.title, laneLabel( to ) );
+			if ( res.card.status && res.card.status.value !== card.status.value ) {
+				moved += ' ' + sprintf( i18n.statusNow, res.card.status.label );
+			}
+			speak( moved );
 		} ).catch( function ( err ) {
-			setCount( to, -1 );
-			setCount( from, +1 );
 			var current = err && err.code === 'bk_conflict' && err.data && err.data.card;
 			if ( current ) {
 				// Someone else moved or changed it: show it where it really is now.
+				setCount( to, -1 );
+				setCount( from, +1 );
 				var real = laneOf( current );
 				var fresh = renderCard( current );
 				node.remove();
@@ -374,19 +413,82 @@
 					}
 				}
 				syncEmpty( real );
+				syncEmpty( from );
+				syncEmpty( to );
 			} else {
-				node.classList.remove( 'is-saving' );
-				node.removeAttribute( 'aria-busy' );
-				putBack( node, home.list, home.index );
-				if ( hadFocus ) {
-					node.focus();
-				}
+				rollback();
 			}
-			syncEmpty( from );
-			syncEmpty( to );
 			showNotice( errorMessage( err ), current ? 'warning' : 'error' );
 			speak( errorMessage( err ) );
 		} );
+		}
+	}
+
+	// ---- schedule date picker ---------------------------------------------------------------
+
+	/** 'YYYY-MM-DDTHH:MM' for a datetime-local input. */
+	function localInputValue( d ) {
+		function p( n ) {
+			return ( n < 10 ? '0' : '' ) + n;
+		}
+		return d.getFullYear() + '-' + p( d.getMonth() + 1 ) + '-' + p( d.getDate() ) + 'T' + p( d.getHours() ) + ':' + p( d.getMinutes() );
+	}
+
+	/**
+	 * Inline "when?" form on a card dropped into a scheduling lane. The date is SITE time (the
+	 * server converts it); the label names the site's timezone so nobody schedules in their own.
+	 */
+	function askDate( node, card, laneName, onConfirm, onCancel ) {
+		var existing = card.date && card.status && card.status.value === 'future' ? card.date.replace( ' ', 'T' ) : '';
+		var tomorrow = new Date();
+		tomorrow.setDate( tomorrow.getDate() + 1 );
+		tomorrow.setHours( 9, 0, 0, 0 );
+		var inputId = 'bk-when-' + card.id;
+
+		var input = el( 'input', { id: inputId, type: 'datetime-local', class: 'bk-when-input', required: true, value: existing || localInputValue( tomorrow ) } );
+		var ok = el( 'button', { type: 'submit', class: 'button button-primary button-small', text: i18n.schedule } );
+		var no = el( 'button', { type: 'button', class: 'button button-small', text: i18n.cancel } );
+		var form = el( 'form', { class: 'bk-when', 'aria-label': sprintf( i18n.whenLabel, card.title ) }, [
+			el( 'label', { for: inputId, text: sprintf( i18n.when, laneName ) } ),
+			input,
+			el( 'span', { class: 'bk-when-tz', text: sprintf( i18n.siteTime, timezone ) } ),
+			el( 'div', { class: 'bk-when-actions' }, [ ok, no ] ),
+		] );
+
+		var done = false;
+		function finish( confirmed ) {
+			if ( done ) {
+				return;
+			}
+			done = true;
+			var value = input.value;
+			form.remove();
+			if ( confirmed ) {
+				onConfirm( value.replace( 'T', ' ' ) );
+			} else {
+				onCancel();
+			}
+		}
+		form.addEventListener( 'submit', function ( e ) {
+			e.preventDefault();
+			if ( input.value ) {
+				finish( true );
+			}
+		} );
+		no.addEventListener( 'click', function () {
+			finish( false );
+		} );
+		form.addEventListener( 'keydown', function ( e ) {
+			e.stopPropagation(); // keep the card's pick-up keys out of the form
+			if ( e.key === 'Escape' ) {
+				e.preventDefault();
+				finish( false );
+			}
+		} );
+
+		node.appendChild( form );
+		input.focus();
+		speak( sprintf( i18n.whenLabel, card.title ) );
 	}
 
 	function indexIn( node ) {
@@ -427,7 +529,7 @@
 		if ( onControl ) {
 			return;
 		}
-		if ( e.key === ' ' ) {
+		if ( e.key === ' ' || e.key === 'Enter' ) {
 			e.preventDefault(); // Space would scroll the page.
 			pickUp( id );
 		} else if ( e.key === 'ArrowDown' || e.key === 'ArrowUp' ) {
@@ -447,6 +549,8 @@
 		picked = { id: id, target: laneOf( card ) };
 		cardEl( id ).classList.add( 'is-picked' );
 		cardEl( id ).setAttribute( 'aria-grabbed', 'true' );
+		hint.textContent = sprintf( i18n.hint, card.title );
+		hint.hidden = false;
 		speak( sprintf( i18n.pickedUp, card.title, laneLabel( laneOf( card ) ) ) );
 	}
 
@@ -484,6 +588,7 @@
 		}
 		highlight( picked.target, false );
 		picked = null;
+		hint.hidden = true;
 		if ( announce ) {
 			speak( i18n.cancelled );
 		}
@@ -595,7 +700,7 @@
 				},
 				sort: false, // Lanes are sorted by a field; no hand ordering in v1.
 				draggable: '.bk-card',
-				filter: '.bk-card-menu-btn, .bk-menu',
+				filter: '.bk-card-menu-btn, .bk-menu, .bk-when',
 				preventOnFilter: false,
 				ghostClass: 'is-ghost',
 				chosenClass: 'is-chosen',
@@ -654,10 +759,13 @@
 
 	// ---- boot ------------------------------------------------------------------------------
 
-	root.parentNode.insertBefore( el( 'p', { id: 'bk-card-help', class: 'screen-reader-text', text: i18n.cardHelp } ), root );
+	// Visible, not screen-reader-only: the keyboard path has to be discoverable for everyone.
+	root.parentNode.insertBefore( el( 'p', { id: 'bk-card-help', class: 'bk-tip', text: i18n.cardHelp } ), root );
+	document.body.appendChild( hint );
 
 	apiFetch( { path: base } )
 		.then( function ( board ) {
+			timezone = board.timezone || '';
 			root.textContent = '';
 			board.lanes.forEach( function ( lane ) {
 				root.appendChild( renderLane( lane ) );

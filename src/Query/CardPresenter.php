@@ -57,6 +57,9 @@ final class CardPresenter {
 			'edit_url'     => current_user_can( 'edit_post', $post->ID ) ? (string) get_edit_post_link( $post->ID, 'raw' ) : '',
 			'view_url'     => (string) get_permalink( $post ),
 			'modified_gmt' => (string) $post->post_modified_gmt,
+			// Site-local 'Y-m-d H:i' if the post has a real date (drafts often don't), for the
+			// schedule picker's default.
+			'date'         => self::has_date( $post ) ? substr( (string) $post->post_date, 0, 16 ) : '',
 			'status'       => [
 				'value' => (string) $post->post_status,
 				'label' => $status ? (string) $status->label : (string) $post->post_status,
@@ -99,6 +102,11 @@ final class CardPresenter {
 			'name'   => self::text( (string) $user->display_name ),
 			'avatar' => (string) get_avatar_url( $user->ID, [ 'size' => 48 ] ),
 		];
+	}
+
+	public static function has_date( \WP_Post $post ): bool {
+		$gmt = (string) $post->post_date_gmt;
+		return $gmt !== '' && $gmt !== '0000-00-00 00:00:00';
 	}
 
 	/** Display text → plain text: strip tags, decode entities (wptexturize turns ' into &#8217;). */

@@ -3,6 +3,8 @@ declare( strict_types=1 );
 
 namespace BoardKit\Boards;
 
+use BoardKit\Moves\StatusChange;
+
 /**
  * Board storage (spec §4.1). Pattern from ColumnKit's SettingsRepository:
  *
@@ -14,7 +16,15 @@ namespace BoardKit\Boards;
  * - A per-request cache.
  */
 final class BoardRepository {
-	public const SCHEMA_VERSION = 1;
+	/** 2: stage lanes may set a WordPress status ('status' key); the starter board's lanes changed. */
+	public const SCHEMA_VERSION = 2;
+
+	/**
+	 * The v0.2/v0.3 starter board's lanes, exactly. A stored board still matching these was never
+	 * edited, so it's safe to move it to the v2 starter lanes on read. Lane VALUES are kept (they're
+	 * the stage term slugs posts already carry); only labels and statuses change.
+	 */
+	private const V1_STARTER = [ 'pitch' => 'Pitch', 'draft' => 'Draft', 'in-review' => 'In Review', 'approved' => 'Approved', 'scheduled' => 'Scheduled', 'published' => 'Published' ];
 	public const INDEX_OPTION   = 'bk_boards';
 	public const OPTION_PREFIX  = 'bk_board_';
 
@@ -105,24 +115,36 @@ final class BoardRepository {
 
 	/** @return array<string, mixed> */
 	public static function default_board(): array {
-		$lane = static fn( string $value, string $label, string $color ): array => [ 'value' => $value, 'label' => $label, 'color' => $color, 'wip' => 0 ];
 		return [
+			'schema'      => self::SCHEMA_VERSION,
 			'id'          => 'editorial',
 			'label'       => __( 'Editorial', 'boardkit' ),
 			'post_types'  => [ 'post' ],
 			'lane_source' => [ 'kind' => 'stage' ],
-			'lanes'       => [
-				$lane( 'pitch', __( 'Pitch', 'boardkit' ), '#8c8f94' ),
-				$lane( 'draft', __( 'Draft', 'boardkit' ), '#2271b1' ),
-				$lane( 'in-review', __( 'In Review', 'boardkit' ), '#dba617' ),
-				$lane( 'approved', __( 'Approved', 'boardkit' ), '#00a32a' ),
-				$lane( 'scheduled', __( 'Scheduled', 'boardkit' ), '#9b51e0' ),
-				$lane( 'published', __( 'Published', 'boardkit' ), '#1d2327' ),
-			],
+			'lanes'       => self::starter_lanes(),
 			'sort'        => [ 'by' => 'modified', 'dir' => 'desc' ],
 			'cards'       => [ 'source' => 'builtin', 'fields' => [ 'author', 'status', 'assignees', 'due' ] ],
 			'filters'     => [ 'default' => [] ],
 			'calendar'    => [ 'date' => 'post_date' ],
+		];
+	}
+
+	/**
+	 * Editorial stages; the last three also set the WordPress status, so the board does what its
+	 * lane names say (Ready → Pending Review, Scheduled → scheduled for a date, Published → live).
+	 * Values are the stage term slugs (kept from v0.2 so existing posts stay in their lanes).
+	 *
+	 * @return array<int, array{value: string, label: string, color: string, wip: int, status: string}>
+	 */
+	public static function starter_lanes(): array {
+		$lane = static fn( string $value, string $label, string $color, string $status = '' ): array => [ 'value' => $value, 'label' => $label, 'color' => $color, 'wip' => 0, 'status' => $status ];
+		return [
+			$lane( 'pitch', __( 'Pitch', 'boardkit' ), '#8c8f94' ),
+			$lane( 'draft', __( 'Writing', 'boardkit' ), '#2271b1' ),
+			$lane( 'in-review', __( 'Editing', 'boardkit' ), '#dba617' ),
+			$lane( 'approved', __( 'Ready', 'boardkit' ), '#00a32a', 'pending' ),
+			$lane( 'scheduled', __( 'Scheduled', 'boardkit' ), '#9b51e0', 'future' ),
+			$lane( 'published', __( 'Published', 'boardkit' ), '#1d2327', 'publish' ),
 		];
 	}
 
@@ -164,12 +186,22 @@ final class BoardRepository {
 			}
 			$seen[ $value ] = true;
 			$color          = isset( $lane['color'] ) && is_string( $lane['color'] ) ? (string) sanitize_hex_color( $lane['color'] ) : '';
+			// Only stage lanes carry a status of their own; on a status board the lane IS the status.
+			$status         = $kind === 'stage' && in_array( $lane['status'] ?? '', StatusChange::SETTABLE, true ) ? (string) $lane['status'] : '';
 			$lanes[]        = [
-				'value' => $value,
-				'label' => isset( $lane['label'] ) && is_string( $lane['label'] ) && $lane['label'] !== '' ? sanitize_text_field( $lane['label'] ) : $value,
-				'color' => $color,
-				'wip'   => max( 0, (int) ( $lane['wip'] ?? 0 ) ),
+				'value'  => $value,
+				'label'  => isset( $lane['label'] ) && is_string( $lane['label'] ) && $lane['label'] !== '' ? sanitize_text_field( $lane['label'] ) : $value,
+				'color'  => $color,
+				'wip'    => max( 0, (int) ( $lane['wip'] ?? 0 ) ),
+				'status' => $status,
 			];
+		}
+
+		// v1 → v2: the untouched v0.2/v0.3 starter board becomes the v2 starter board.
+		if ( (int) ( $in['schema'] ?? 1 ) < 2 && $kind === 'stage' && self::is_v1_starter( $lanes ) ) {
+			$colors = array_column( $lanes, 'color', 'value' );
+			$wips   = array_column( $lanes, 'wip', 'value' );
+			$lanes  = array_map( static fn( array $l ): array => [ 'color' => $colors[ $l['value'] ], 'wip' => $wips[ $l['value'] ] ] + $l, self::starter_lanes() );
 		}
 
 		$sort = isset( $in['sort'] ) && is_array( $in['sort'] ) ? $in['sort'] : [];
@@ -207,6 +239,22 @@ final class BoardRepository {
 			'filters'     => [ 'default' => array_map( 'sanitize_text_field', array_filter( $filters_in, 'is_string' ) ) ],
 			'calendar'    => $calendar,
 		];
+	}
+
+	/** @param array<int, array<string, mixed>> $lanes */
+	private static function is_v1_starter( array $lanes ): bool {
+		if ( count( $lanes ) !== count( self::V1_STARTER ) ) {
+			return false;
+		}
+		foreach ( $lanes as $i => $lane ) {
+			$value = array_keys( self::V1_STARTER )[ $i ];
+			// Labels as well as values: a renamed lane means someone edited the board. (English only —
+			// a translated starter board is left as it is.)
+			if ( $lane['value'] !== $value || $lane['label'] !== self::V1_STARTER[ $value ] || $lane['status'] !== '' ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	public static function sanitize_id( string $id ): string {

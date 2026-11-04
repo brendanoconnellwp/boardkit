@@ -263,6 +263,71 @@
 	color: #646970;
 }
 
+.bk-tip {
+	margin: 8px 0 0;
+	color: #50575e;
+	font-size: 12px;
+}
+
+/* What dropping into this lane does to the post (e.g. "Publishes the post"). */
+.bk-lane-sets {
+	margin: -4px 12px 8px;
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bk-lane-sets::before {
+	content: "\2192\00a0"; /* → */
+}
+
+/* Keyboard instructions while a card is picked up. */
+.bk-hint {
+	position: fixed;
+	z-index: 1000;
+	left: 50%;
+	bottom: 24px;
+	transform: translateX(-50%);
+	max-width: calc(100vw - 48px);
+	padding: 10px 16px;
+	background: #1d2327;
+	color: #fff;
+	border-radius: 4px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+	font-size: 13px;
+}
+
+.bk-hint[hidden] {
+	display: none;
+}
+
+/* Schedule date picker on a card. */
+.bk-when {
+	display: grid;
+	gap: 6px;
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid #dcdcde;
+	cursor: default;
+}
+
+.bk-when label {
+	font-weight: 600;
+}
+
+.bk-when-input {
+	width: 100%;
+}
+
+.bk-when-tz {
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bk-when-actions {
+	display: flex;
+	gap: 6px;
+}
+
 .bk-board-link .dashicons {
 	font-size: 16px;
 	width: 16px;
