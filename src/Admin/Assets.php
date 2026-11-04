@@ -31,7 +31,9 @@ final class Assets {
 		}
 
 		wp_enqueue_style( self::HANDLE, BK_URL . 'assets/board.css', [], BK_VERSION );
-		wp_enqueue_script( self::HANDLE, BK_URL . 'assets/board.js', [ 'wp-api-fetch', 'wp-a11y' ], BK_VERSION, true );
+		// SortableJS 1.15.6 (MIT), vendored with its licence — see assets/vendor/VENDOR.md.
+		wp_register_script( 'boardkit-sortable', BK_URL . 'assets/vendor/sortable.min.js', [], '1.15.6', true );
+		wp_enqueue_script( self::HANDLE, BK_URL . 'assets/board.js', [ 'wp-api-fetch', 'wp-a11y', 'boardkit-sortable' ], BK_VERSION, true );
 
 		$config = [
 			'board'     => $board->id(),
@@ -51,6 +53,20 @@ final class Assets {
 				'assignees'  => __( 'Assigned to', 'boardkit' ),
 				'author'     => __( 'Author', 'boardkit' ),
 				'loadedMore' => __( 'More cards loaded', 'boardkit' ),
+				/* translators: %s: post title */
+				'actions'    => __( 'Actions for %s', 'boardkit' ),
+				'open'       => __( 'Open', 'boardkit' ),
+				'view'       => __( 'View post', 'boardkit' ),
+				/* translators: %s: lane name */
+				'moveTo'     => __( 'Move to %s', 'boardkit' ),
+				/* translators: 1: post title, 2: lane name */
+				'moved'      => __( 'Moved “%1$s” to %2$s', 'boardkit' ),
+				/* translators: 1: post title, 2: lane name */
+				'pickedUp'   => __( '“%1$s” picked up, in %2$s. Use the left and right arrow keys to choose a lane, Space to drop, Escape to cancel.', 'boardkit' ),
+				/* translators: %s: lane name */
+				'targetSame' => __( '%s (current lane)', 'boardkit' ),
+				'cancelled'  => __( 'Move cancelled.', 'boardkit' ),
+				'cardHelp'   => __( 'Press Space to pick up this card and move it to another lane.', 'boardkit' ),
 			],
 		];
 		wp_add_inline_script( self::HANDLE, 'window.BoardKitConfig = ' . wp_json_encode( $config, self::JSON_FLAGS ) . ';', 'before' );
