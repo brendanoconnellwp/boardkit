@@ -160,6 +160,9 @@ final class MetaBox {
 			case 'due':
 				/* translators: 1: date or "none", 2: user name, 3: "2 hours ago" */
 				return sprintf( __( 'Due date set to %1$s by %2$s, %3$s', 'boardkit' ), $entry['to'] !== '' ? $entry['to'] : __( 'none', 'boardkit' ), $name, $when );
+			case 'created':
+				/* translators: 1: lane name, 2: user name, 3: "2 hours ago" */
+				return sprintf( __( 'Added to %1$s by %2$s, %3$s', 'boardkit' ), $label( $entry['to'] ), $name, $when );
 			case 'assignees':
 				/* translators: 1: user name, 2: "2 hours ago" */
 				return sprintf( __( 'Assignees changed by %1$s, %2$s', 'boardkit' ), $name, $when );

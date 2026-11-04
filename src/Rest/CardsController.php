@@ -6,6 +6,8 @@ namespace BoardKit\Rest;
 use BoardKit\Boards\Board;
 use BoardKit\Boards\BoardRepository;
 use BoardKit\Editorial\Assignees;
+use BoardKit\Editorial\CardCreator;
+use BoardKit\Editorial\CardDetails;
 use BoardKit\Editorial\DueDate;
 use BoardKit\Editorial\Meta;
 use BoardKit\Moves\MoveService;
@@ -21,6 +23,9 @@ use WP_REST_Response;
  *   POST boardkit/v1/boards/{id}/cards/{post_id}/assignees  { user_ids[], previous[] }
  *   POST boardkit/v1/boards/{id}/cards/{post_id}/due        { date ('' clears), previous }
  *   GET  boardkit/v1/boards/{id}/people?search=             users who can edit this post type
+ *   POST boardkit/v1/boards/{id}/cards                      { title, lane } "+ Add card" (201)
+ *   GET  boardkit/v1/boards/{id}/cards/{post_id}            card + panel details
+ *   POST boardkit/v1/boards/{id}/cards/{post_id}/details    { title?, excerpt?, featured_media?, modified }
  *
  * Assignee and due routes sit under the board (spec had /cards/{id}/…) so the response can be a
  * card for that board and the permission gate is the same as for moves. `previous` is what the
@@ -76,6 +81,35 @@ final class CardsController {
 				'previous' => [ 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
 			],
 		] );
+		// Phase 5: the card panel and "+ Add card".
+		register_rest_route( BoardsController::NAMESPACE, '/boards/(?P<id>[a-z0-9_\-]{1,40})/cards', [
+			'methods'             => 'POST',
+			'callback'            => [ $this, 'create' ],
+			'permission_callback' => [ $this, 'can_view' ],
+			'args'                => [
+				'title' => [ 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ],
+				'lane'  => [ 'type' => 'string', 'required' => true, 'sanitize_callback' => [ BoardRepository::class, 'sanitize_lane_value' ] ],
+			],
+		] );
+		register_rest_route( BoardsController::NAMESPACE, $card, [
+			'methods'             => 'GET',
+			'callback'            => [ $this, 'details' ],
+			'permission_callback' => [ $this, 'can_view' ],
+		] );
+		register_rest_route( BoardsController::NAMESPACE, $card . '/details', [
+			'methods'             => 'POST',
+			'callback'            => [ $this, 'save_details' ],
+			'permission_callback' => [ $this, 'can_view' ],
+			'args'                => [
+				// Absent = leave alone. Title and excerpt go through core's own save filters (kses
+				// for users without unfiltered_html), the same as in the editor.
+				'title'          => [ 'type' => 'string' ],
+				'excerpt'        => [ 'type' => 'string' ],
+				'featured_media' => [ 'type' => 'integer', 'minimum' => 0 ],
+				'modified'       => [ 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ],
+			],
+		] );
+
 		register_rest_route( BoardsController::NAMESPACE, '/boards/(?P<id>[a-z0-9_\-]{1,40})/people', [
 			'methods'             => 'GET',
 			'callback'            => [ $this, 'people' ],
@@ -134,6 +168,57 @@ final class CardsController {
 			return $result;
 		}
 		return new WP_REST_Response( [ 'card' => $this->presenter->card( $post, $board ) ] );
+	}
+
+	public function create( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$board = $this->boards->get( (string) $request['id'] );
+		if ( $board === null ) {
+			return MoveService::error( 'bk_no_board', __( 'Board not found.', 'boardkit' ), 404 );
+		}
+		$post = CardCreator::create( $board, $this->presenter->source( $board ), (string) $request['title'], (string) $request['lane'] );
+		if ( $post instanceof WP_Error ) {
+			return $post;
+		}
+		$response = new WP_REST_Response( [ 'card' => $this->presenter->card( $post, $board ) ] );
+		$response->set_status( 201 );
+		return $response;
+	}
+
+	public function details( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$board = $this->boards->get( (string) $request['id'] );
+		$post  = $board ? $this->editable_post( $board, (int) $request['post_id'] ) : MoveService::error( 'bk_no_board', __( 'Board not found.', 'boardkit' ), 404 );
+		if ( $post instanceof WP_Error ) {
+			return $post;
+		}
+		return new WP_REST_Response( [ 'card' => $this->presenter->card( $post, $board ), 'details' => CardDetails::read( $post ) ] );
+	}
+
+	public function save_details( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$board = $this->boards->get( (string) $request['id'] );
+		$post  = $board ? $this->editable_post( $board, (int) $request['post_id'] ) : MoveService::error( 'bk_no_board', __( 'Board not found.', 'boardkit' ), 404 );
+		if ( $post instanceof WP_Error ) {
+			return $post;
+		}
+		$changes = [];
+		foreach ( [ 'title', 'excerpt', 'featured_media' ] as $key ) {
+			if ( $request->has_param( $key ) ) {
+				$changes[ $key ] = $request[ $key ];
+			}
+		}
+		$result = CardDetails::save( $post, $changes, (string) $request['modified'] );
+		if ( $result instanceof WP_Error ) {
+			$data = $result->get_error_data();
+			if ( is_array( $data ) && ( $data['post'] ?? null ) instanceof \WP_Post ) {
+				// 409: send the current card and details so the panel can show what's there now.
+				$now = $data['post'];
+				unset( $data['post'] );
+				$data['card']    = $this->presenter->card( $now, $board );
+				$data['details'] = CardDetails::read( $now );
+				return new WP_Error( $result->get_error_code(), $result->get_error_message(), $data );
+			}
+			return $result;
+		}
+		return new WP_REST_Response( [ 'card' => $this->presenter->card( $result, $board ), 'details' => CardDetails::read( $result ) ] );
 	}
 
 	/**

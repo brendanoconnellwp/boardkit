@@ -41,6 +41,11 @@ final class Assets {
 		}
 
 		wp_enqueue_style( self::HANDLE, BK_URL . 'assets/board.css', [], self::version( 'assets/board.css' ) );
+		// The core media modal, for the card panel's featured image. Its library is listed via
+		// admin-ajax, which needs upload_files — so only for users who have it.
+		if ( current_user_can( 'upload_files' ) ) {
+			wp_enqueue_media();
+		}
 		// SortableJS 1.15.6 (MIT), vendored with its licence — see assets/vendor/VENDOR.md.
 		wp_register_script( 'boardkit-sortable', BK_URL . 'assets/vendor/sortable.min.js', [], '1.15.6', true );
 		wp_enqueue_script( self::HANDLE, BK_URL . 'assets/board.js', [ 'wp-api-fetch', 'wp-a11y', 'boardkit-sortable' ], self::version( 'assets/board.js' ), true );
@@ -119,6 +124,48 @@ final class Assets {
 				'clearFilters' => __( 'Clear filters', 'boardkit' ),
 				/* translators: %d: number of cards */
 				'filtered'     => __( '%d cards match.', 'boardkit' ),
+				// Phase 5: card panel and "+ Add card".
+				'panel'        => [
+					'close'        => __( 'Close', 'boardkit' ),
+					'details'      => __( 'Details', 'boardkit' ),
+					'write'        => __( 'Write', 'boardkit' ),
+					'title'        => __( 'Title', 'boardkit' ),
+					'excerpt'      => __( 'Excerpt', 'boardkit' ),
+					'excerptHelp'  => __( 'A short summary. Themes show it in post lists, and many SEO tools use it as the meta description.', 'boardkit' ),
+					'featured'     => __( 'Featured image', 'boardkit' ),
+					'setImage'     => __( 'Set featured image', 'boardkit' ),
+					'replaceImage' => __( 'Replace', 'boardkit' ),
+					'removeImage'  => __( 'Remove', 'boardkit' ),
+					'useImage'     => __( 'Use as featured image', 'boardkit' ),
+					'noImage'      => __( 'No featured image.', 'boardkit' ),
+					'noUpload'     => __( 'You can’t choose images on this site.', 'boardkit' ),
+					'lane'         => __( 'Lane', 'boardkit' ),
+					'fullEditor'   => __( 'Open in full editor', 'boardkit' ),
+					'saveDetails'  => __( 'Save details', 'boardkit' ),
+					'saved'        => __( 'Saved.', 'boardkit' ),
+					'loading'      => __( 'Loading…', 'boardkit' ),
+					/* translators: %s: user name */
+					'locked'       => __( '%s is editing this post right now. Saving here is off until they’re done.', 'boardkit' ),
+					/* translators: %s: post title */
+					'editorTitle'  => __( 'Editor for “%s”', 'boardkit' ),
+					'unsaved'      => __( 'You have unsaved changes in the editor.', 'boardkit' ),
+					'saveClose'    => __( 'Save and continue', 'boardkit' ),
+					'discard'      => __( 'Discard changes', 'boardkit' ),
+					'keepEditing'  => __( 'Keep editing', 'boardkit' ),
+					'saveFirst'    => __( 'Save in the editor first, or discard the changes.', 'boardkit' ),
+					'conflict'     => __( 'Someone else changed this post. The panel now shows the latest version; your changes weren’t saved.', 'boardkit' ),
+					'left'         => __( 'The editor left this post, so the panel was closed.', 'boardkit' ),
+					'noChanges'    => __( 'Nothing to save.', 'boardkit' ),
+					'unsavedDetails' => __( 'You have unsaved changes to the details.', 'boardkit' ),
+				],
+				'addCard'      => __( '+ Add card', 'boardkit' ),
+				'add'          => __( 'Add', 'boardkit' ),
+				'cardTitle'    => __( 'Card title', 'boardkit' ),
+				/* translators: %s: lane name */
+				'addTo'        => __( 'Add a card to %s', 'boardkit' ),
+				/* translators: 1: post title, 2: lane name */
+				'added'        => __( 'Added “%1$s” to %2$s', 'boardkit' ),
+				'openEditor'   => __( 'Open in editor', 'boardkit' ),
 			],
 		];
 		wp_add_inline_script( self::HANDLE, 'window.BoardKitConfig = ' . wp_json_encode( $config, self::JSON_FLAGS ) . ';', 'before' );

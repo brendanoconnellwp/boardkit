@@ -5,6 +5,7 @@ namespace BoardKit\Rest;
 
 use BoardKit\Boards\Board;
 use BoardKit\Boards\BoardRepository;
+use BoardKit\Editorial\CardCreator;
 use BoardKit\Moves\StatusChange;
 use BoardKit\Query\CardPresenter;
 use BoardKit\Query\CardQuery;
@@ -72,7 +73,8 @@ final class BoardsController {
 	public function get_board( WP_REST_Request $request ): WP_REST_Response {
 		$board  = $this->board( $request );
 		$counts = $this->cards->counts( $board, self::filters( $request ) );
-		return new WP_REST_Response( self::board_payload( $board, $counts ) );
+		$creatable = CardCreator::creatable_lanes( $board, $this->presenter->source( $board ) );
+		return new WP_REST_Response( self::board_payload( $board, $counts, $creatable ) );
 	}
 
 	/** @return WP_REST_Response|WP_Error */
@@ -92,16 +94,22 @@ final class BoardsController {
 
 	/**
 	 * @param array<string, int> $counts
+	 * @param array<int, string> $creatable lanes the current user can add cards to
 	 * @return array<string, mixed>
 	 */
-	public static function board_payload( Board $board, array $counts ): array {
+	public static function board_payload( Board $board, array $counts, array $creatable = [] ): array {
 		$lanes = [];
 		foreach ( $board->lanes() as $lane ) {
 			// The WordPress status a move into this lane sets (the UI asks for a date for 'future').
 			$sets = $board->lane_kind() === 'status'
 				? ( in_array( $lane['value'], StatusChange::SETTABLE, true ) ? $lane['value'] : '' )
 				: (string) ( $lane['status'] ?? '' );
-			$lanes[] = $lane + [ 'count' => $counts[ $lane['value'] ] ?? 0, 'readonly' => false, 'sets_status' => $sets ];
+			$lanes[] = $lane + [
+				'count'       => $counts[ $lane['value'] ] ?? 0,
+				'readonly'    => false,
+				'sets_status' => $sets,
+				'can_create'  => in_array( $lane['value'], $creatable, true ),
+			];
 		}
 		$lanes[] = [
 			'value'    => Board::UNSORTED,
@@ -111,6 +119,7 @@ final class BoardsController {
 			'count'    => $counts[ Board::UNSORTED ] ?? 0,
 			'readonly' => true, // Cards can leave Unsorted but never be dropped into it (§4.3).
 			'sets_status' => '',
+			'can_create'  => false,
 		];
 		return [
 			'id'        => $board->id(),

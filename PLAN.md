@@ -148,7 +148,41 @@ Build in this order, since each step depends on the one before:
   Due sort via the `posts_clauses` fix (§0.6).
 - Smoke: "assigned to me" uses `meta_query` and no `LIKE`, verified with `$wpdb->last_query`. Undated posts sort last.
 
-### Phase 5 — Board settings (v0.5.0)
+### Phase 5 — Card panel (v0.5.0) — added 2026-11-04 at the user's request
+Click a card to open a side panel (like a Notion page peek). The board stays usable beside it.
+- **Details tab:** title, excerpt, featured image (the core media modal; only for users with `upload_files`), plus the
+  card's stage, assignees and due date. Fields appear only if the post type supports them.
+  `GET /boards/{id}/cards/{post_id}` returns the details. `POST …/details {title, excerpt, featured_media, modified}`
+  goes through `Editorial\CardDetails`:
+  - `edit_post` check;
+  - compare-and-swap on `post_modified_gmt` (409 + card);
+  - refused while another user holds the post lock (`wp_check_post_lock`, 409 `bk_locked`);
+  - `wp_slash()` before `wp_update_post` (it unslashes), and the post's status, date and content are never passed;
+  - the featured image must be an image attachment the user can read.
+- **Write tab:** the real block editor (or classic editor) in an iframe: `post.php?action=edit&bk_panel=1`. Under
+  `bk_panel` the editor hides the admin menu and toolbar, nothing else changes. Same origin, so `X-Frame-Options:
+  SAMEORIGIN` allows it.
+  - Why not a home-made editor: it would lose blocks, autosave, revisions, post locks and plugin fields.
+  - Closing the panel or switching tabs with unsaved editor changes offers "Save and close" (`core/editor`
+    `savePost`) or "Discard". Never a silent loss.
+  - The card is refetched when the panel closes.
+- **"+ Add card" in each lane:** `POST /boards/{id}/cards {title, lane}` creates a post of the board's type.
+  - Rules: `create_posts` for the post type; only lanes that set no status, or set draft or pending; status lanes
+    draft and pending only.
+  - The new post is a draft (or pending if the lane says so), with the stage set by term ID. Logged as `created`.
+- The panel's state is kept in the URL (`&card=`), and it's a labelled, non-modal `role="dialog"`. Escape closes it
+  and returns focus to the card. It's full screen below 782px.
+
+### Phase 6 — AI assists (v0.6.0) — added 2026-11-04
+- Only when core's AI client exists (`wp_ai_client_prompt`, WP 7.0+) and a provider is configured. Otherwise there's no UI.
+- In the panel: suggest titles, write the excerpt or meta description, outline from the pitch, generate a featured
+  image (if the model supports images).
+- Suggestions only; the user accepts or edits each one. Needs `edit_post`, with a per-user rate limit (the site pays
+  per call).
+- Meta description: the excerpt by default, or the active SEO plugin's field when one is detected (Yoast, Rank Math,
+  SEOPress).
+
+### Phase 7 — Board settings (v0.7.0)
 - `Admin\SettingsPage` (admin-post handlers, `manage_options` + nonce): create, rename, duplicate, delete board; lane editor
   (label, colour, WIP, reorder); sort; card fields.
 - `TaxonomySource` (top level only, "+N" chip), `AuthorSource` (capped list plus "Other").
@@ -156,13 +190,13 @@ Build in this order, since each step depends on the one before:
 - `Admin\BoardExporter` with allowlisted keys and an import round trip.
 - Check that lane colours meet WCAG AA contrast when they're saved (§5.5). Pick the text colour automatically.
 
-### Phase 6 — Calendar (v0.6.0)
+### Phase 8 — Calendar (v0.8.0)
 - `Rest\CalendarController` (range capped at 42 days), `POST /cards/{id}/date` through `MoveService`.
 - `calendar.js`: month and week grids, drag between days, keyboard equivalent, "Unscheduled" tray.
 - `post_date` rules: moving a published post to a future date → `future`, needs `publish_posts`. Draft date moves keep
   the status. Compute timezones with `get_gmt_from_date()`, and include a smoke test that runs with a non-UTC site timezone.
 
-### Phase 7 — ColumnKit enhanced mode (v0.7.0)
+### Phase 9 — ColumnKit enhanced mode (v0.9.0)
 - `Integrations\ColumnKit::enable()`: register `ColumnKitSource` and the card-field option.
 - `ColumnKitSource` applies the native-source denylist (§0.5). `move()` → `Api::save()` and maps its `WP_Error` status codes.
 - Card fields from a view, capped at 6 columns.
@@ -171,10 +205,10 @@ Build in this order, since each step depends on the one before:
   restores them. The settings screen shows a notice.
 - Smoke: an ACF select lane source updates the field via `update_field`. Deactivating ColumnKit falls back cleanly.
 
-### Phase 8 — Polish (v0.8.0 → 1.0.0)
+### Phase 10 — Polish (→ 1.0.0)
 - Mobile layout below 782px (stacked, collapsible lanes, no drag), empty states, "My cards: due this week" dashboard widget.
 - Accessibility review: keyboard only, plus NVDA (Windows) and VoiceOver.
-- Full role matrix × {ColumnKit on, off} × {post, custom-capability CPT}, recorded in `PITFALLS-phase8.md`.
+- Full role matrix × {ColumnKit on, off} × {post, custom-capability CPT}, recorded in `PITFALLS-phase10.md`.
 
 ---
 

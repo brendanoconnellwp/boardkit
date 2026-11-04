@@ -7,6 +7,7 @@ use BoardKit\Admin\Assets;
 use BoardKit\Admin\BoardPage;
 use BoardKit\Admin\ListTableLink;
 use BoardKit\Admin\Menu;
+use BoardKit\Admin\PanelEditor;
 use BoardKit\Boards\BoardRepository;
 use BoardKit\Editorial\MetaBox;
 use BoardKit\Editorial\StageTaxonomy;
@@ -81,6 +82,7 @@ final class Plugin {
 			$menu->register_hooks();
 			( new Assets( $menu, $page ) )->register_hooks();
 			( new ListTableLink( $this->boards ) )->register_hooks();
+			( new PanelEditor() )->register_hooks();
 			add_action( 'admin_notices', [ MetaBox::class, 'render_flash' ] );
 		}
 	}

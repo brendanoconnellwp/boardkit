@@ -43,6 +43,15 @@ final class StatusSource implements LaneSource {
 		return in_array( $lane, StatusChange::SETTABLE, true ) ? $lane : '';
 	}
 
+	public function new_post_status( Board $board, string $lane ): ?string {
+		return $board->has_lane( $lane ) && in_array( $lane, [ 'draft', 'pending' ], true ) ? $lane : null;
+	}
+
+	/** The status IS the lane, and wp_insert_post already set it. */
+	public function place_new( \WP_Post $post, string $lane, Board $board ): bool|\WP_Error {
+		return true;
+	}
+
 	public function lane_of( \WP_Post $post, Board $board ): ?string {
 		return $board->has_lane( (string) $post->post_status ) ? (string) $post->post_status : null;
 	}

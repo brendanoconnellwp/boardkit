@@ -5,6 +5,7 @@ namespace BoardKit\Query;
 
 use BoardKit\Boards\Board;
 use BoardKit\Editorial\Meta;
+use BoardKit\Lanes\LaneSource;
 use BoardKit\Lanes\LaneSourceRegistry;
 
 /**
@@ -15,6 +16,10 @@ use BoardKit\Lanes\LaneSourceRegistry;
  */
 final class CardPresenter {
 	public function __construct( private LaneSourceRegistry $sources ) {}
+
+	public function source( Board $board ): LaneSource {
+		return $this->sources->for_board( $board );
+	}
 
 	/**
 	 * Prime the user cache for every author and assignee on the page in one query (spec §8).

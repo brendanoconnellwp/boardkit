@@ -4,7 +4,7 @@ Tags: kanban, editorial calendar, workflow, editorial
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 8.0
-Stable tag: 0.4.0
+Stable tag: 0.5.0
 License: GPLv2 or later
 
 A Kanban board and editorial calendar for WordPress content.
@@ -16,6 +16,14 @@ BoardKit adds two views of your posts to wp-admin: a board (cards in lanes such 
 It works on its own. With ColumnKit active, boards can use a ColumnKit view as their card fields and any editable fixed-choice column as a lane source.
 
 == Changelog ==
+
+= 0.5.0 =
+* New: click a card's title to open it in a panel beside the board. The board stays usable while it's open, so you can keep dragging cards. Ctrl/Cmd-click still opens the full editor.
+* New: the panel's Details tab edits the title, excerpt and featured image (upload or choose from the Media Library), and moves the card to another lane.
+* New: the panel's Write tab is the normal WordPress editor, so blocks, autosave, revisions and fields from other plugins all work. Closing the panel or switching tabs with unsaved changes asks first: save, discard, or keep editing.
+* New: "+ Add card" under a lane creates a draft there. Press Enter to add it and type the next one. It only appears in lanes that don't publish or schedule (on the Editorial board: Pitch, Writing, Editing and Ready; Ready submits it for review).
+* The panel's address can be shared or bookmarked: it opens on that card.
+* Safety: if someone else has the post open in the editor, the panel won't save over their work and says who it is. If the post changed since you opened it, the panel shows the latest version instead of overwriting it. The panel never changes a post's status or publishes it.
 
 = 0.4.0 =
 * New: assign people to a post, and give it a due date, from the card's ⋯ menu (Assign…, Set due date…) or from the new Editorial box in the post editor. Only people who can edit the post can be assigned.

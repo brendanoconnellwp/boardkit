@@ -38,6 +38,9 @@
 	var timezone = '';
 	/** Visible keyboard instructions while a card is picked up. */
 	var hint = el( 'div', { class: 'bk-hint', hidden: true, 'aria-hidden': 'true' } );
+	/** The open card panel: { id, root, body, tab, data, frame } or null. */
+	var panel = null;
+	var pi18n = i18n.panel || {};
 
 	// ---- helpers ---------------------------------------------------------------------------
 
@@ -145,11 +148,21 @@
 
 	function renderCard( card ) {
 		cards[ card.id ] = card;
+		syncPanelLane( card );
 
 		var editUrl = safeUrl( card.edit_url );
 		var title = editUrl
 			? el( 'a', { class: 'bk-card-title', href: editUrl, text: card.title } )
 			: el( 'span', { class: 'bk-card-title', text: card.title } );
+		if ( editUrl ) {
+			// A plain click opens the card panel; Ctrl/Cmd/Shift/middle-click still open the editor.
+			title.addEventListener( 'click', function ( e ) {
+				if ( e.button === 0 && ! e.ctrlKey && ! e.metaKey && ! e.shiftKey && ! e.altKey ) {
+					e.preventDefault();
+					openPanel( card.id );
+				}
+			} );
+		}
 
 		var meta = el( 'div', { class: 'bk-card-meta' } );
 		if ( card.status && card.fields.indexOf( 'status' ) !== -1 ) {
@@ -194,7 +207,7 @@
 		var thumb = card.thumbnail ? el( 'img', { class: 'bk-thumb', src: safeUrl( card.thumbnail ) || null, alt: '', loading: 'lazy' } ) : null;
 
 		var node = el( 'li', {
-			class: 'bk-card',
+			class: 'bk-card' + ( panel && panel.id === card.id ? ' is-open' : '' ),
 			role: 'listitem',
 			tabindex: 0,
 			'data-id': card.id,
@@ -266,6 +279,7 @@
 			lane.sets_status && i18n.sets[ lane.sets_status ] ? el( 'p', { class: 'bk-lane-sets', text: i18n.sets[ lane.sets_status ] } ) : null,
 			list,
 			more,
+			lane.can_create ? addCardControl( lane ) : null,
 		] );
 
 		var state = { lane: lane, section: section, list: list, countEl: countEl, more: more, count: lane.count, next: 0, loaded: false };
@@ -361,6 +375,7 @@
 			putBack( node, home.list, home.index );
 			syncEmpty( from );
 			syncEmpty( to );
+			syncPanelLane( card );
 			node.focus();
 		}
 
@@ -633,7 +648,8 @@
 		var card = cards[ id ];
 		var items = [];
 		if ( safeUrl( card.edit_url ) ) {
-			items.push( { label: i18n.open, href: safeUrl( card.edit_url ) } );
+			items.push( { label: i18n.open, action: openPanel } );
+			items.push( { label: i18n.openEditor, href: safeUrl( card.edit_url ) } );
 		}
 		if ( safeUrl( card.view_url ) ) {
 			items.push( { label: i18n.view, href: safeUrl( card.view_url ), newTab: true } );
@@ -1094,6 +1110,636 @@
 		] );
 	}
 
+	// ---- "+ Add card" (PLAN Phase 5) ---------------------------------------------------------
+
+	/** The add button under a lane; the server says which lanes accept new cards (can_create). */
+	function addCardControl( lane ) {
+		var wrap = el( 'div', { class: 'bk-add' } );
+		var button = el( 'button', { type: 'button', class: 'button-link bk-add-btn', text: i18n.addCard, 'aria-label': sprintf( i18n.addTo, lane.label ) } );
+		wrap.appendChild( button );
+		button.addEventListener( 'click', function () {
+			var inputId = 'bk-add-' + lane.value;
+			var input = el( 'input', { id: inputId, type: 'text', class: 'bk-when-input', maxlength: 300, autocomplete: 'off' } );
+			var ok = el( 'button', { type: 'submit', class: 'button button-primary button-small', text: i18n.add } );
+			var no = el( 'button', { type: 'button', class: 'button button-small', text: i18n.cancel } );
+			var form = el( 'form', { class: 'bk-form bk-add-form', 'aria-label': sprintf( i18n.addTo, lane.label ) }, [
+				el( 'label', { for: inputId, class: 'screen-reader-text', text: i18n.cardTitle } ),
+				input,
+				el( 'div', { class: 'bk-when-actions' }, [ ok, no ] ),
+			] );
+			function close() {
+				form.remove();
+				button.hidden = false;
+				button.focus();
+			}
+			no.addEventListener( 'click', close );
+			form.addEventListener( 'keydown', function ( e ) {
+				if ( e.key === 'Escape' ) {
+					e.preventDefault();
+					close();
+				}
+			} );
+			form.addEventListener( 'submit', function ( e ) {
+				e.preventDefault();
+				var title = input.value.trim();
+				if ( ! title ) {
+					input.focus();
+					return;
+				}
+				ok.disabled = true;
+				apiFetch( { path: base + '/cards', method: 'POST', data: { title: title, lane: lane.value } } ).then( function ( res ) {
+					ok.disabled = false;
+					var where = lanes[ laneOf( res.card ) ] ? laneOf( res.card ) : lane.value;
+					if ( lanes[ where ] ) {
+						lanes[ where ].list.insertBefore( renderCard( res.card ), lanes[ where ].list.firstChild );
+						setCount( where, +1 );
+						syncEmpty( where );
+					}
+					// Stay open for the next one: adding a run of pitches is the common case.
+					input.value = '';
+					input.focus();
+					showNotice( '' );
+					speak( sprintf( i18n.added, res.card.title, laneLabel( where ) ) );
+				} ).catch( function ( err ) {
+					ok.disabled = false;
+					showNotice( errorMessage( err ) );
+					speak( errorMessage( err ) );
+				} );
+			} );
+			button.hidden = true;
+			wrap.appendChild( form );
+			input.focus();
+		} );
+		return wrap;
+	}
+
+	// ---- card panel (PLAN Phase 5) ------------------------------------------------------------
+	//
+	// A non-modal dialog beside the board: the board stays usable (drag, keyboard) while it's
+	// open. Details = title, excerpt, featured image, lane. Write = the real post editor in an
+	// iframe (bk_panel=1 hides its admin chrome). Unsaved changes are never dropped silently:
+	// closing, switching tab or opening another card goes through guard().
+
+	function setUrlCard( id ) {
+		var params = new URLSearchParams( window.location.search );
+		if ( id ) {
+			params.set( 'card', id );
+		} else {
+			params.delete( 'card' );
+		}
+		window.history.replaceState( null, '', window.location.pathname + '?' + params.toString() );
+	}
+
+	function markOpen( id, on ) {
+		var n = cardEl( id );
+		if ( n ) {
+			n.classList.toggle( 'is-open', on );
+		}
+	}
+
+	/** Keep the panel's lane select in step with the card (after a move, a rollback or a 409). */
+	function syncPanelLane( card ) {
+		if ( panel && panel.id === card.id && panel.laneSelect ) {
+			panel.laneSelect.value = laneOf( card );
+		}
+	}
+
+	/** A card came back from the server, maybe in another lane (e.g. the editor changed its stage). */
+	function relocate( fresh ) {
+		var old = cards[ fresh.id ];
+		var node = cardEl( fresh.id );
+		if ( ! old || ! node ) {
+			return;
+		}
+		var from = laneOf( old );
+		var to = laneOf( fresh );
+		if ( from === to || ! lanes[ to ] ) {
+			swapCard( fresh.id, fresh );
+			return;
+		}
+		var next = renderCard( fresh );
+		node.remove();
+		lanes[ to ].list.insertBefore( next, lanes[ to ].list.firstChild );
+		setCount( from, -1 );
+		setCount( to, +1 );
+		syncEmpty( from );
+		syncEmpty( to );
+	}
+
+	function refreshCard( id ) {
+		apiFetch( { path: base + '/cards/' + id } ).then( function ( res ) {
+			relocate( res.card );
+		} ).catch( function ( err ) {
+			// Trashed (or otherwise gone) from inside the editor: take it off the board.
+			var node = cardEl( id );
+			if ( err && err.code === 'bk_no_post' && node && cards[ id ] ) {
+				var from = laneOf( cards[ id ] );
+				node.remove();
+				setCount( from, -1 );
+				syncEmpty( from );
+			}
+		} );
+	}
+
+	function panelNotice( msg, type ) {
+		if ( ! panel ) {
+			return;
+		}
+		panel.notice.textContent = '';
+		if ( msg ) {
+			panel.notice.appendChild( el( 'div', { class: 'notice inline notice-' + ( type || 'error' ) }, [ el( 'p', { text: msg } ) ] ) );
+		}
+	}
+
+	/** What the editor in the Write tab is holding. Same origin, so its wp.data is reachable. */
+	function editorState() {
+		var frame = panel && panel.frame;
+		if ( ! frame ) {
+			return { dirty: false };
+		}
+		try {
+			var w = frame.contentWindow;
+			var sel = w.wp && w.wp.data && w.wp.data.select ? w.wp.data.select( 'core/editor' ) : null;
+			if ( sel && typeof sel.isEditedPostDirty === 'function' ) {
+				return { dirty: !! sel.isEditedPostDirty(), block: true, w: w };
+			}
+			if ( w.wp && w.wp.autosave && w.wp.autosave.server && w.wp.autosave.server.postChanged ) {
+				return { dirty: !! w.wp.autosave.server.postChanged(), block: false, w: w };
+			}
+		} catch ( e ) {
+			// Not loaded yet, or navigated somewhere we can't read: nothing to protect.
+		}
+		return { dirty: false };
+	}
+
+	/** Save the block editor (post and meta boxes); rejects if the save failed. */
+	function saveEditor( st ) {
+		var data = st.w.wp.data;
+		return Promise.resolve( data.dispatch( 'core/editor' ).savePost() ).then( function () {
+			if ( ! data.select( 'core/editor' ).didPostSaveRequestSucceed() ) {
+				throw new Error( 'save failed' );
+			}
+			var ep = data.select( 'core/edit-post' );
+			function busy() {
+				return !! ( ep && ep.isSavingMetaBoxes && ep.isSavingMetaBoxes() );
+			}
+			return new Promise( function ( resolve ) {
+				if ( ! busy() ) {
+					resolve();
+					return;
+				}
+				var unsub = data.subscribe( function () {
+					if ( ! busy() ) {
+						unsub();
+						resolve();
+					}
+				} );
+			} );
+		} );
+	}
+
+	/** Unsaved work in the panel: { dirty, save: fn→Promise|null, msg }. */
+	function dirtyState() {
+		if ( ! panel ) {
+			return { dirty: false };
+		}
+		if ( panel.tab === 'write' ) {
+			var st = editorState();
+			return {
+				dirty: st.dirty,
+				save: st.block ? function () {
+					return saveEditor( st );
+				} : null,
+				msg: st.block ? pi18n.unsaved : pi18n.unsaved + ' ' + pi18n.saveFirst,
+			};
+		}
+		if ( panel.form && panel.form.dirty() ) {
+			return { dirty: true, save: panel.form.save, msg: pi18n.unsavedDetails };
+		}
+		return { dirty: false };
+	}
+
+	/** Run next() now, or — if there are unsaved changes — after the user saves or discards them. */
+	function guard( next ) {
+		var st = dirtyState();
+		if ( ! st.dirty ) {
+			next();
+			return;
+		}
+		var old = panel.root.querySelector( '.bk-panel-guard' );
+		if ( old ) {
+			old.remove();
+		}
+		// Where to put focus back on "Keep editing" (the bar's own buttons are about to go).
+		var returnTo = panel.root.contains( document.activeElement ) ? document.activeElement : panel.closeBtn;
+		var save = st.save ? el( 'button', { type: 'button', class: 'button button-primary button-small', text: pi18n.saveClose } ) : null;
+		var discard = el( 'button', { type: 'button', class: 'button button-small', text: pi18n.discard } );
+		var keep = el( 'button', { type: 'button', class: 'button button-small', text: pi18n.keepEditing } );
+		var bar = el( 'div', { class: 'bk-panel-guard notice notice-warning inline', role: 'alert' }, [
+			el( 'p', { text: st.msg } ),
+			el( 'div', { class: 'bk-when-actions' }, [ save, discard, keep ] ),
+		] );
+		if ( save ) {
+			save.addEventListener( 'click', function () {
+				save.disabled = true;
+				st.save().then( function () {
+					bar.remove();
+					next();
+				}, function () {
+					save.disabled = false;
+				} );
+			} );
+		}
+		discard.addEventListener( 'click', function () {
+			bar.remove();
+			if ( panel ) {
+				panel.form = null; // drop the details edits too
+				panel.frame = null;
+			}
+			next();
+		} );
+		keep.addEventListener( 'click', function () {
+			bar.remove();
+			if ( panel && panel.frame ) {
+				panel.frame.focus();
+			} else if ( returnTo && document.body.contains( returnTo ) ) {
+				returnTo.focus();
+			}
+		} );
+		panel.head.parentNode.insertBefore( bar, panel.head.nextSibling );
+		( save || discard ).focus();
+	}
+
+	function openPanel( id ) {
+		if ( panel && panel.id === id ) {
+			panel.closeBtn.focus();
+			return;
+		}
+		if ( panel ) {
+			guard( function () {
+				closePanel( false );
+				openPanel( id );
+			} );
+			return;
+		}
+		closeMenu( false );
+		cancelPick( false );
+
+		var heading = el( 'h2', { id: 'bk-panel-title', class: 'bk-panel-title', text: ( cards[ id ] && cards[ id ].title ) || pi18n.loading } );
+		var closeBtn = el( 'button', { type: 'button', class: 'button bk-panel-close', text: pi18n.close } );
+		var head = el( 'div', { class: 'bk-panel-head' }, [ heading, closeBtn ] );
+		var tabs = el( 'div', { class: 'bk-panel-tabs', role: 'tablist', 'aria-labelledby': 'bk-panel-title' } );
+		var noticeEl = el( 'div', { class: 'bk-panel-notice', role: 'status', 'aria-live': 'polite' } );
+		var body = el( 'div', { id: 'bk-panel-body', class: 'bk-panel-body', role: 'tabpanel', tabindex: -1 }, [ el( 'p', { class: 'bk-loading', text: pi18n.loading } ) ] );
+		var rootEl = el( 'aside', { class: 'bk-panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'bk-panel-title' }, [ head, tabs, noticeEl, body ] );
+
+		panel = { id: id, root: rootEl, head: head, heading: heading, closeBtn: closeBtn, tabs: tabs, notice: noticeEl, body: body, tab: 'details', data: null, frame: null, form: null, laneSelect: null };
+		closeBtn.addEventListener( 'click', requestClose );
+		rootEl.addEventListener( 'keydown', function ( e ) {
+			if ( e.key === 'Escape' && ! e.defaultPrevented ) {
+				e.preventDefault();
+				requestClose();
+			}
+		} );
+		document.body.appendChild( rootEl );
+		document.body.classList.add( 'bk-panel-open' );
+		markOpen( id, true );
+		setUrlCard( id );
+		closeBtn.focus();
+		loadPanel( id );
+	}
+
+	function requestClose() {
+		guard( function () {
+			closePanel( true );
+		} );
+	}
+
+	function closePanel( focusCard ) {
+		if ( ! panel ) {
+			return;
+		}
+		var id = panel.id;
+		var wasWriting = panel.tab === 'write';
+		panel.root.remove();
+		document.body.classList.remove( 'bk-panel-open', 'bk-panel-writing' );
+		markOpen( id, false );
+		panel = null;
+		setUrlCard( '' );
+		if ( wasWriting ) {
+			refreshCard( id ); // the editor may have changed the title, image, stage…
+		}
+		var n = cardEl( id );
+		if ( focusCard && n ) {
+			n.focus();
+		}
+	}
+
+	function loadPanel( id ) {
+		return apiFetch( { path: base + '/cards/' + id } ).then( function ( res ) {
+			if ( ! panel || panel.id !== id ) {
+				return;
+			}
+			panel.data = res;
+			panel.heading.textContent = res.card.title;
+			relocate( res.card );
+			buildTabs();
+			showTab( panel.tab === 'write' ? 'details' : panel.tab );
+		} ).catch( function ( err ) {
+			if ( ! panel || panel.id !== id ) {
+				return;
+			}
+			panel.body.textContent = '';
+			panelNotice( errorMessage( err ) );
+		} );
+	}
+
+	function buildTabs() {
+		var d = panel.data.details;
+		var names = [ 'details' ];
+		if ( d.supports.editor && safeUrl( d.editor_url ) ) {
+			names.push( 'write' );
+		}
+		panel.tabs.textContent = '';
+		names.forEach( function ( name ) {
+			var b = el( 'button', { type: 'button', role: 'tab', class: 'bk-panel-tab', id: 'bk-tab-' + name, 'data-tab': name, 'aria-controls': 'bk-panel-body', text: pi18n[ name ] } );
+			b.addEventListener( 'click', function () {
+				if ( panel.tab !== name ) {
+					guard( function () {
+						showTab( name );
+					} );
+				}
+			} );
+			b.addEventListener( 'keydown', function ( e ) {
+				if ( e.key === 'ArrowRight' || e.key === 'ArrowLeft' ) {
+					e.preventDefault();
+					var i = names.indexOf( name ) + ( e.key === 'ArrowRight' ? 1 : -1 );
+					var other = panel.tabs.querySelector( '[data-tab="' + names[ ( i + names.length ) % names.length ] + '"]' );
+					if ( other ) {
+						other.focus();
+						other.click();
+					}
+				}
+			} );
+			panel.tabs.appendChild( b );
+		} );
+	}
+
+	function showTab( name ) {
+		var leavingEditor = panel.tab === 'write' && name !== 'write' && panel.data;
+		panel.tab = name;
+		Array.prototype.forEach.call( panel.tabs.children, function ( b ) {
+			var on = b.getAttribute( 'data-tab' ) === name;
+			b.setAttribute( 'aria-selected', on ? 'true' : 'false' );
+			b.tabIndex = on ? 0 : -1;
+		} );
+		panel.body.setAttribute( 'aria-labelledby', 'bk-tab-' + name );
+		panel.frame = null;
+		panel.form = null;
+		panel.laneSelect = null;
+		panel.body.textContent = '';
+		panelNotice( '' );
+		document.body.classList.toggle( 'bk-panel-writing', name === 'write' );
+		if ( name === 'write' ) {
+			renderWrite();
+		} else if ( leavingEditor ) {
+			// The editor may have changed the title, excerpt or image: reload before showing them.
+			panel.body.appendChild( el( 'p', { class: 'bk-loading', text: pi18n.loading } ) );
+			loadPanel( panel.id );
+		} else {
+			renderDetails();
+		}
+	}
+
+	/** POST only the changed fields; refresh the panel and the card from the reply. */
+	function saveDetails( changes ) {
+		var id = panel.id;
+		var data = { modified: panel.data.card.modified_gmt };
+		Object.keys( changes ).forEach( function ( k ) {
+			data[ k ] = changes[ k ];
+		} );
+		return apiFetch( { path: base + '/cards/' + id + '/details', method: 'POST', data: data } ).then( function ( res ) {
+			if ( panel && panel.id === id ) {
+				panel.data = res;
+				panel.heading.textContent = res.card.title;
+				panelNotice( pi18n.saved, 'success' );
+			}
+			relocate( res.card );
+			speak( pi18n.saved );
+			return res;
+		}, function ( err ) {
+			var current = err && err.data && err.data.card;
+			if ( current && err.code === 'bk_conflict' ) {
+				relocate( current );
+				if ( panel && panel.id === id ) {
+					panel.data = { card: current, details: err.data.details };
+					panel.heading.textContent = current.title;
+					renderDetails();
+					panelNotice( pi18n.conflict, 'warning' );
+				}
+				speak( pi18n.conflict );
+			} else {
+				if ( current && panel && panel.id === id && err.data.details ) {
+					panel.data.details.locked_by = err.data.details.locked_by; // keep what they typed
+				}
+				panelNotice( errorMessage( err ) );
+				speak( errorMessage( err ) );
+			}
+			throw err;
+		} );
+	}
+
+	function renderDetails() {
+		panel.body.textContent = '';
+		panel.form = null;
+		var d = panel.data.details;
+		var card = panel.data.card;
+		var id = panel.id;
+		var locked = !! d.locked_by;
+		var form = el( 'form', { class: 'bk-panel-form' } );
+
+		if ( locked ) {
+			form.appendChild( el( 'div', { class: 'notice notice-warning inline' }, [ el( 'p', { text: sprintf( pi18n.locked, d.locked_by ) } ) ] ) );
+		}
+
+		var titleInput = null;
+		if ( d.supports.title ) {
+			titleInput = el( 'input', { id: 'bk-p-title', type: 'text', class: 'widefat', maxlength: 300, value: d.title } );
+			form.appendChild( el( 'p', { class: 'bk-panel-field' }, [ el( 'label', { for: 'bk-p-title', text: pi18n.title } ), titleInput ] ) );
+		}
+
+		var excerptInput = null;
+		if ( d.supports.excerpt ) {
+			excerptInput = el( 'textarea', { id: 'bk-p-excerpt', class: 'widefat', rows: 4, 'aria-describedby': 'bk-p-excerpt-help', text: d.excerpt } );
+			form.appendChild( el( 'p', { class: 'bk-panel-field' }, [
+				el( 'label', { for: 'bk-p-excerpt', text: pi18n.excerpt } ),
+				excerptInput,
+				el( 'span', { id: 'bk-p-excerpt-help', class: 'bk-panel-help', text: pi18n.excerptHelp } ),
+			] ) );
+		}
+
+		var save = el( 'button', { type: 'submit', class: 'button button-primary', text: pi18n.saveDetails, disabled: locked } );
+		if ( titleInput || excerptInput ) {
+			form.appendChild( el( 'p', { class: 'bk-panel-actions' }, [ save ] ) );
+		}
+
+		// Featured image: chosen in the core media modal, saved at once (like the editor does).
+		if ( d.supports.thumbnail ) {
+			var imgBox = el( 'div', { class: 'bk-panel-image' } );
+			form.appendChild( el( 'div', { class: 'bk-panel-field' }, [ el( 'span', { class: 'bk-panel-label', text: pi18n.featured } ), imgBox ] ) );
+			drawImage( imgBox );
+		}
+
+		// Lane: the same move as drag / keyboard / menu (needs the card on the board).
+		if ( cardEl( id ) && cards[ id ] ) {
+			var select = el( 'select', { id: 'bk-p-lane' } );
+			laneOrder.forEach( function ( v ) {
+				var l = lanes[ v ].lane;
+				if ( ! l.readonly || v === laneOf( card ) ) {
+					select.appendChild( el( 'option', { value: v, text: l.label, disabled: l.readonly } ) );
+				}
+			} );
+			select.value = laneOf( cards[ id ] );
+			select.addEventListener( 'change', function () {
+				moveCard( id, select.value );
+			} );
+			panel.laneSelect = select;
+			form.appendChild( el( 'p', { class: 'bk-panel-field' }, [ el( 'label', { for: 'bk-p-lane', text: pi18n.lane } ), select ] ) );
+		}
+
+		var links = el( 'p', { class: 'bk-panel-links' } );
+		if ( safeUrl( card.edit_url ) ) {
+			links.appendChild( el( 'a', { href: safeUrl( card.edit_url ), text: pi18n.fullEditor } ) );
+		}
+		if ( safeUrl( card.view_url ) ) {
+			links.appendChild( document.createTextNode( ' · ' ) );
+			links.appendChild( el( 'a', { href: safeUrl( card.view_url ), target: '_blank', rel: 'noopener', text: i18n.view } ) );
+		}
+		form.appendChild( links );
+
+		function changes() {
+			var c = {};
+			if ( titleInput && titleInput.value.trim() !== d.title.trim() ) {
+				c.title = titleInput.value;
+			}
+			if ( excerptInput && excerptInput.value.trim() !== d.excerpt.trim() ) {
+				c.excerpt = excerptInput.value;
+			}
+			return c;
+		}
+		panel.form = {
+			dirty: function () {
+				return Object.keys( changes() ).length > 0;
+			},
+			save: function () {
+				return saveDetails( changes() );
+			},
+		};
+		form.addEventListener( 'submit', function ( e ) {
+			e.preventDefault();
+			var c = changes();
+			if ( ! Object.keys( c ).length ) {
+				panelNotice( pi18n.noChanges, 'info' );
+				return;
+			}
+			save.disabled = true;
+			saveDetails( c ).then( function () {
+				renderDetails();
+				panelNotice( pi18n.saved, 'success' );
+				var again = panel && panel.body.querySelector( '.bk-panel-actions .button-primary' );
+				if ( again ) {
+					again.focus();
+				}
+			}, function () {
+				save.disabled = !! ( panel && panel.data.details.locked_by );
+			} );
+		} );
+		panel.body.appendChild( form );
+	}
+
+	function drawImage( box ) {
+		box.textContent = '';
+		var d = panel.data.details;
+		var f = d.featured;
+		if ( f && safeUrl( f.url ) ) {
+			box.appendChild( el( 'img', { class: 'bk-panel-thumb', src: safeUrl( f.url ), alt: f.alt || '' } ) );
+		} else {
+			box.appendChild( el( 'p', { class: 'bk-panel-help', text: pi18n.noImage } ) );
+		}
+		if ( ! d.can_upload || ! window.wp.media ) {
+			box.appendChild( el( 'p', { class: 'bk-panel-help', text: pi18n.noUpload } ) );
+			return;
+		}
+		if ( d.locked_by ) {
+			return;
+		}
+		var pick = el( 'button', { type: 'button', class: 'button', text: f ? pi18n.replaceImage : pi18n.setImage } );
+		var actions = el( 'div', { class: 'bk-when-actions' }, [ pick ] );
+		pick.addEventListener( 'click', function () {
+			var frame = window.wp.media( { title: pi18n.featured, library: { type: 'image' }, button: { text: pi18n.useImage }, multiple: false } );
+			frame.on( 'select', function () {
+				var att = frame.state().get( 'selection' ).first();
+				if ( att && panel ) {
+					saveDetails( { featured_media: att.get( 'id' ) } ).then( function () {
+						drawImage( box );
+					}, function () {} );
+				}
+			} );
+			frame.open();
+		} );
+		if ( f ) {
+			var remove = el( 'button', { type: 'button', class: 'button-link button-link-delete', text: pi18n.removeImage } );
+			remove.addEventListener( 'click', function () {
+				saveDetails( { featured_media: 0 } ).then( function () {
+					drawImage( box );
+					var b = box.querySelector( 'button' );
+					if ( b ) {
+						b.focus();
+					}
+				}, function () {} );
+			} );
+			actions.appendChild( remove );
+		}
+		box.appendChild( actions );
+	}
+
+	function renderWrite() {
+		var d = panel.data.details;
+		var id = panel.id;
+		var url = safeUrl( d.editor_url );
+		if ( ! url ) {
+			return;
+		}
+		var frame = el( 'iframe', { class: 'bk-panel-frame', src: url, title: sprintf( pi18n.editorTitle, panel.data.card.title ) } );
+		frame.addEventListener( 'load', function () {
+			var loc = '';
+			try {
+				loc = frame.contentWindow.location.pathname + frame.contentWindow.location.search;
+			} catch ( e ) {
+				loc = '';
+			}
+			// Still this post's editor (a classic save reloads it with the flag kept)? Otherwise —
+			// trashed, or a link went elsewhere — close the panel and refresh the board.
+			var here = /\/post\.php/.test( loc ) && new RegExp( '[?&]post=' + id + '(&|$)' ).test( loc );
+			if ( ! here && panel && panel.id === id && panel.frame === frame ) {
+				panel.frame = null;
+				closePanel( false );
+				showNotice( pi18n.left, 'warning' );
+				loadBoard( false );
+			}
+		} );
+		panel.frame = frame;
+		panel.body.appendChild( frame );
+	}
+
+	// Leaving the page with unsaved work in the panel: let the browser ask.
+	window.addEventListener( 'beforeunload', function ( e ) {
+		if ( dirtyState().dirty ) {
+			e.preventDefault();
+			e.returnValue = '';
+		}
+	} );
+
 	// ---- boot ------------------------------------------------------------------------------
 
 	root.parentNode.insertBefore( buildFilterBar(), root );
@@ -1139,4 +1785,10 @@
 	}
 
 	loadBoard( false );
+
+	// A shared or reloaded link with &card= opens that card's panel.
+	var initialCard = parseInt( new URLSearchParams( window.location.search ).get( 'card' ) || '', 10 );
+	if ( initialCard > 0 ) {
+		openPanel( initialCard );
+	}
 }() );

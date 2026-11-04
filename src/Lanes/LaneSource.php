@@ -36,4 +36,13 @@ interface LaneSource {
 
 	/** The WordPress status moving into $lane sets ('' = none), so the UI can ask for a date for 'future'. */
 	public function status_set_by( Board $board, string $lane ): string;
+
+	/**
+	 * Status for a card created in $lane ("+ Add card"), or null if the current user can't add
+	 * cards there. Only draft or pending: a new card never publishes or schedules anything.
+	 */
+	public function new_post_status( Board $board, string $lane ): ?string;
+
+	/** Put a just-created post into $lane (its status is already set). true or WP_Error. */
+	public function place_new( \WP_Post $post, string $lane, Board $board ): bool|\WP_Error;
 }
