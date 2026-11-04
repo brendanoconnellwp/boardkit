@@ -20,6 +20,7 @@ What checking `../columnkit` turned up. Items 1–5 change the design. Items 6�
 | 6 | §8: due-date sort uses `EXISTS` + `OR NOT EXISTS`, ordered by the named clause | MySQL sorts `NULL` **first** on `ASC`. ColumnKit's `MetaSortSql` docblock says the same. The suggested query puts undated posts at the *top*. | Add a `posts_clauses` filter scoped to the query: `ORDER BY ({alias}.meta_value IS NULL), {alias}.meta_value ASC`. Pin it with a smoke test, since a unit test can't run SQL. |
 | 7 | §3.1: "the value sanitised" | `ajax_inline_save` uses `sanitize_text_field` and then switches to `sanitize_textarea_field` for `textarea` inputs. | The shared save routine (§2 below) takes the **unsanitised** value and sanitises it according to the input type. |
 | 8 | §2: updater "about 220 lines", workflow "about 100" | 410 and 152 lines | Wording only. Copying them is still the right call. |
+| 9 | §3.1 `Api::save()` and §4.3 `LaneSource::move()` return `true\|\WP_Error` | The standalone `true` type is **PHP 8.2+**. Both plugins support PHP 8.0, so it's a fatal parse error on 8.0 and 8.1. | Declare `bool\|\WP_Error` and document "never false". Done in ColumnKit 0.8.0. Do the same for `LaneSource`. |
 
 ---
 
