@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       BoardKit
  * Description:       Kanban board and editorial calendar for WordPress content. Companion to ColumnKit.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            Brendan
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BK_VERSION', '0.1.0' );
+define( 'BK_VERSION', '0.2.0' );
 define( 'BK_FILE', __FILE__ );
 define( 'BK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BK_URL', plugin_dir_url( __FILE__ ) );

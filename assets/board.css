@@ -1,0 +1,191 @@
+/* BoardKit board screen. Uses WP admin colours; lane colour is decorative only (spec §5.5). */
+
+.bk-board {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+	overflow-x: auto;
+	padding: 12px 0 24px;
+	min-height: 200px;
+}
+
+.bk-lane {
+	--bk-lane-color: #c3c4c7;
+	flex: 0 0 280px;
+	max-height: calc(100vh - 200px);
+	display: flex;
+	flex-direction: column;
+	background: #f0f0f1;
+	border: 1px solid #dcdcde;
+	border-top: 4px solid var(--bk-lane-color);
+	border-radius: 4px;
+}
+
+.bk-lane.is-readonly {
+	border-style: dashed;
+	border-top-style: solid;
+}
+
+.bk-lane-head {
+	margin: 0;
+	font-size: 13px;
+}
+
+.bk-lane-toggle {
+	display: flex;
+	width: 100%;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	background: none;
+	border: 0;
+	font: inherit;
+	font-weight: 600;
+	color: #1d2327;
+	text-align: left;
+	cursor: pointer;
+}
+
+.bk-lane-toggle:focus-visible {
+	outline: 2px solid #2271b1;
+	outline-offset: -2px;
+}
+
+.bk-lane-count {
+	font-weight: 400;
+	color: #50575e;
+	white-space: nowrap;
+}
+
+.bk-lane-count.is-over {
+	color: #b32d2e;
+	font-weight: 600;
+}
+
+.bk-cards {
+	list-style: none;
+	margin: 0;
+	padding: 0 8px 8px;
+	overflow-y: auto;
+	flex: 1 1 auto;
+}
+
+.bk-lane.is-collapsed .bk-cards,
+.bk-lane.is-collapsed .bk-more {
+	display: none;
+}
+
+.bk-card {
+	margin: 0 0 8px;
+	padding: 10px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 3px;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.bk-card:focus-visible {
+	outline: 2px solid #2271b1;
+	outline-offset: 1px;
+}
+
+.bk-card-title {
+	display: block;
+	font-weight: 600;
+	line-height: 1.4;
+	word-wrap: break-word;
+}
+
+.bk-thumb {
+	display: block;
+	width: 100%;
+	height: 96px;
+	object-fit: cover;
+	margin-bottom: 8px;
+	border-radius: 2px;
+}
+
+.bk-card-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+.bk-chip {
+	display: inline-block;
+	padding: 1px 6px;
+	border-radius: 9px;
+	background: #f0f0f1;
+	color: #3c434a;
+	font-size: 11px;
+	line-height: 18px;
+}
+
+.bk-due.is-overdue {
+	background: #fcf0f1;
+	color: #8a2424; /* AA on #fcf0f1; the chip also says "Overdue" in text. */
+	font-weight: 600;
+}
+
+.bk-card-people {
+	display: flex;
+	gap: 4px;
+	margin-top: 8px;
+}
+
+.bk-avatar {
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+}
+
+.bk-assignee {
+	box-shadow: 0 0 0 2px #fff, 0 0 0 3px #2271b1;
+}
+
+.bk-empty {
+	padding: 12px 4px;
+	color: #646970;
+	font-style: italic;
+}
+
+.bk-more {
+	margin: 0 8px 8px;
+}
+
+.bk-loading {
+	color: #646970;
+}
+
+.bk-board-link .dashicons {
+	font-size: 16px;
+	width: 16px;
+	height: 16px;
+	vertical-align: text-bottom;
+}
+
+/* Below WordPress's 782px breakpoint lanes stack; each is collapsible (spec §5.3). */
+@media screen and (max-width: 782px) {
+	.bk-board {
+		flex-direction: column;
+		overflow-x: visible;
+	}
+
+	.bk-lane {
+		flex: 0 0 auto;
+		width: 100%;
+		max-height: none;
+	}
+
+	.bk-cards {
+		overflow-y: visible;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.bk-card {
+		transition: box-shadow 0.15s ease;
+	}
+}

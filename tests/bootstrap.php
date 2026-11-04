@@ -89,3 +89,19 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		}
 	}
 }
+if ( ! class_exists( 'WP_REST_Request' ) ) {
+	/** Array-access params, like core's. */
+	class WP_REST_Request implements ArrayAccess {
+		private array $params = [];
+		public function offsetExists( mixed $k ): bool { return isset( $this->params[ $k ] ); }
+		public function offsetGet( mixed $k ): mixed { return $this->params[ $k ] ?? null; }
+		public function offsetSet( mixed $k, mixed $v ): void { $this->params[ $k ] = $v; }
+		public function offsetUnset( mixed $k ): void { unset( $this->params[ $k ] ); }
+	}
+}
+if ( ! class_exists( 'WP_REST_Response' ) ) {
+	class WP_REST_Response {
+		public function __construct( public mixed $data = null, public int $status = 200 ) {}
+		public function get_data(): mixed { return $this->data; }
+	}
+}

@@ -29,8 +29,12 @@ final class PluginTest extends TestCase {
 		// Fresh instance: the singleton may already be booted by another test.
 		$ref    = new \ReflectionClass( Plugin::class );
 		$plugin = $ref->newInstanceWithoutConstructor();
+		Monkey\Functions\when( 'is_admin' )->justReturn( true );
 
 		$plugin->boot();
+		$this->assertNotFalse( has_action( 'rest_api_init' ), 'REST routes hooked' );
+		$this->assertNotFalse( has_action( 'admin_menu' ), 'admin menu hooked' );
+		$this->assertNotFalse( has_action( 'init', [ $plugin, 'seed' ] ), 'starter board seeded on init' );
 		$this->assertTrue( $plugin->is_booted() );
 		$this->assertNotFalse( has_filter( 'update_plugins_' . GitHubUpdater::HOSTNAME ) );
 
