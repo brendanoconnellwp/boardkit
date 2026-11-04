@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Files copied from ColumnKit (spec §11) must not keep ColumnKit's identifiers: a stray CK_ constant,
+  # ck_ option/transient key or ColumnKit\Updater namespace would make BoardKit read or overwrite
+  # ColumnKit's update cache, or answer update checks for the wrong plugin.
+  rename-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No ColumnKit identifiers in copied files
+        run: |
+          set -euo pipefail
+          FILES="boardkit.php uninstall.php src/Updater tests/Unit/Updater tests/bootstrap.php .github/workflows/release.yml"
+          # -P word boundaries: `check_update` / `pick_package` contain "ck_" mid-word and are fine.
+          # `ColumnKit.Updater`: the dot matches the namespace backslash without PCRE escape traps.
+          # grep exits 0 = match (fail), 1 = clean (pass), 2 = grep error (fail — never a silent pass).
+          set +e
+          grep -rnP '\bCK_|\bck_|ColumnKit.Updater|brendanoconnellwp/columnkit|columnkit-\{?[0-9v]' $FILES
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::ColumnKit identifiers found in files copied into BoardKit (see matches above)."
+            exit 1
+          elif [ "$rc" -ne 1 ]; then
+            echo "::error::rename guard grep failed (exit $rc)."
+            exit 1
+          fi
+          echo "Rename guard passed."
+
+  # The plugin's runtime floor is PHP 8.0 (plugin header), so every file must at least parse there.
+  lint-php80:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.0'
+          coverage: none
+      - name: php -l on PHP 8.0
+        run: find . -path ./vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
+
+  # PHPUnit 10 needs PHP >= 8.1, so the unit suite runs on 8.1 (the composer platform the lock is
+  # resolved for) and a current PHP.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+      - name: Install
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Unit tests
+        run: composer test

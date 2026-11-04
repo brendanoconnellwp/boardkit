@@ -1,0 +1,155 @@
+name: Release
+
+# Three ways in:
+#   1. Merge a version bump to main (boardkit.php changed) → if tag v{version} doesn't exist yet,
+#      the release (and its tag) is created automatically. Merges that don't bump are no-ops.
+#   2. Push a tag v{X.Y.Z} by hand.
+#   3. Run the workflow manually (Actions → Release → Run workflow).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'boardkit.php'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (leave blank to use the version in boardkit.php)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# One release run per ref at a time; a main push and a tag push for the same version can't race.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve and verify version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          HEADER_VERSION="$(grep -oP '^\s*\*\s*Version:\s*\K[0-9][^\s]*' boardkit.php | head -n1)"
+          CONST_VERSION="$(grep -oP "define\(\s*'BK_VERSION',\s*'\K[^']+" boardkit.php | head -n1)"
+          if [ "$HEADER_VERSION" != "$CONST_VERSION" ]; then
+            echo "::error::Plugin header version ($HEADER_VERSION) and BK_VERSION ($CONST_VERSION) disagree in boardkit.php."
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${INPUT_VERSION:-}" ]; then
+            VERSION="${INPUT_VERSION#v}"
+          else
+            VERSION="$HEADER_VERSION"
+          fi
+          if [ "$VERSION" != "$HEADER_VERSION" ]; then
+            echo "::error::Requested version $VERSION does not match boardkit.php ($HEADER_VERSION). Bump the plugin version first."
+            exit 1
+          fi
+          # readme.txt Stable tag drift is worth flagging but shouldn't block a release.
+          if [ -f readme.txt ]; then
+            STABLE_TAG="$(grep -oP '^Stable tag:\s*\K\S+' readme.txt | head -n1 || true)"
+            if [ -n "$STABLE_TAG" ] && [ "$STABLE_TAG" != "$VERSION" ]; then
+              echo "::warning::readme.txt Stable tag ($STABLE_TAG) does not match the release version ($VERSION)."
+            fi
+          fi
+
+          # Branch push: only release when this version hasn't been tagged yet, so ordinary
+          # merges that touch boardkit.php without a version bump do nothing.
+          SKIP=false
+          if [ "${GITHUB_REF_TYPE:-}" = "branch" ] && [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+              echo "Tag v$VERSION already exists — nothing to release."
+              SKIP=true
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+          [ "$SKIP" = "true" ] || echo "Releasing v$VERSION"
+
+      - name: Build plugin zip
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/boardkit"
+          mkdir -p "$STAGE"
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.claude' \
+            --exclude='tests' \
+            --exclude='docs' \
+            --exclude='vendor' \
+            --exclude='node_modules' \
+            --exclude='coverage' \
+            --exclude='.phpunit.cache' \
+            --exclude='.phpunit.result.cache' \
+            --exclude='composer.json' \
+            --exclude='composer.lock' \
+            --exclude='phpunit.xml.dist' \
+            --exclude='PLAN.md' \
+            --exclude='spec.md' \
+            --exclude='CLAUDE.md' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            --exclude='.editorconfig' \
+            --exclude='*.log' \
+            --exclude='.DS_Store' \
+            ./ "$STAGE/"
+          ( cd "$RUNNER_TEMP" && zip -rq "$GITHUB_WORKSPACE/boardkit-${VERSION}.zip" boardkit )
+          echo "Built boardkit-${VERSION}.zip:"
+          unzip -l "boardkit-${VERSION}.zip"
+
+      - name: Create GitHub release
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; uploading/overwriting asset."
+            gh release upload "$TAG" "boardkit-${VERSION}.zip" --clobber
+            exit 0
+          fi
+
+          # Release notes = this version's "= X.Y.Z =" block from readme.txt's changelog, which is
+          # what the in-admin "View details" changelog tab shows. Falls back to GitHub's generated
+          # notes when the block is missing.
+          NOTES_ARGS=(--generate-notes)
+          if [ -f readme.txt ]; then
+            awk -v v="$VERSION" '
+              $0 == "= " v " =" { on = 1; next }
+              on && /^= .* =$/   { exit }
+              on && /^== /       { exit }
+              on                 { print }
+            ' readme.txt > "$RUNNER_TEMP/notes.md"
+            if [ -s "$RUNNER_TEMP/notes.md" ]; then
+              NOTES_ARGS=(--notes-file "$RUNNER_TEMP/notes.md")
+            fi
+          fi
+
+          # --target creates the tag at this commit when it doesn't exist yet (main-push path).
+          # Tags created with GITHUB_TOKEN don't re-trigger workflows, so there's no double run.
+          gh release create "$TAG" \
+            "boardkit-${VERSION}.zip" \
+            --target "$GITHUB_SHA" \
+            --title "BoardKit ${VERSION}" \
+            "${NOTES_ARGS[@]}"

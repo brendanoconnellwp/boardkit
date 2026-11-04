@@ -1,0 +1,22 @@
+=== BoardKit ===
+Contributors: brendan
+Tags: kanban, editorial calendar, workflow, editorial
+Requires at least: 6.0
+Tested up to: 6.9
+Requires PHP: 8.0
+Stable tag: 0.1.0
+License: GPLv2 or later
+
+A Kanban board and editorial calendar for WordPress content.
+
+== Description ==
+
+BoardKit adds two views of your posts to wp-admin: a board (cards in lanes such as Pitch, Draft, In Review, Published — drag a card to update the post) and a calendar (drag a card to reschedule it). It also adds the editorial fields a board needs: workflow stage, assignees and due date.
+
+It works on its own. With ColumnKit active, boards can use a ColumnKit view as their card fields and any editable fixed-choice column as a lane source.
+
+== Changelog ==
+
+= 0.1.0 =
+* Plugin skeleton: autoloader, self-updates from GitHub releases, uninstall cleanup, test harness.
+* Updates are never offered when the plugin folder is a git checkout, so a linked development copy can't be overwritten by a release zip.
