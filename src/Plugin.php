@@ -8,6 +8,7 @@ use BoardKit\Admin\BoardPage;
 use BoardKit\Admin\ListTableLink;
 use BoardKit\Admin\Menu;
 use BoardKit\Boards\BoardRepository;
+use BoardKit\Editorial\MetaBox;
 use BoardKit\Editorial\StageTaxonomy;
 use BoardKit\Lanes\LaneSourceRegistry;
 use BoardKit\Lanes\StageSource;
@@ -15,6 +16,7 @@ use BoardKit\Lanes\StatusSource;
 use BoardKit\Moves\MoveService;
 use BoardKit\Query\CardPresenter;
 use BoardKit\Query\CardQuery;
+use BoardKit\Query\DueSort;
 use BoardKit\Query\Visibility;
 use BoardKit\Rest\BoardsController;
 use BoardKit\Rest\CardsController;
@@ -62,6 +64,8 @@ final class Plugin {
 		$this->cards = new CardQuery( $this->sources, new Visibility() );
 
 		( new StageTaxonomy( $this->boards ) )->register_hooks();
+		( new MetaBox( $this->boards ) )->register_hooks();
+		DueSort::register_hooks();
 		// After the taxonomy exists (init 5): create the starter board once, and its stage terms.
 		add_action( 'init', [ $this, 'seed' ], 6 );
 
@@ -77,6 +81,7 @@ final class Plugin {
 			$menu->register_hooks();
 			( new Assets( $menu, $page ) )->register_hooks();
 			( new ListTableLink( $this->boards ) )->register_hooks();
+			add_action( 'admin_notices', [ MetaBox::class, 'render_flash' ] );
 		}
 	}
 

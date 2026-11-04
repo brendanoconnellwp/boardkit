@@ -288,7 +288,7 @@
 		var l = lanes[ value ];
 		l.more.disabled = true;
 		l.list.setAttribute( 'aria-busy', 'true' );
-		return apiFetch( { path: base + '/lanes/' + encodeURIComponent( value ) + '/cards?offset=' + l.next } )
+		return apiFetch( { path: base + '/lanes/' + encodeURIComponent( value ) + '/cards?offset=' + l.next + filterQuery( '&' ) } )
 			.then( function ( res ) {
 				res.cards.forEach( function ( c ) {
 					// A card moved here optimistically may come back in the page: don't duplicate it.
@@ -638,6 +638,15 @@
 		if ( safeUrl( card.view_url ) ) {
 			items.push( { label: i18n.view, href: safeUrl( card.view_url ), newTab: true } );
 		}
+		if ( safeUrl( card.edit_url ) ) {
+			// Only people who can edit the post get these (the server checks again).
+			if ( card.fields.indexOf( 'assignees' ) !== -1 ) {
+				items.push( { label: i18n.assign, action: openAssign } );
+			}
+			if ( card.fields.indexOf( 'due' ) !== -1 ) {
+				items.push( { label: i18n.setDue, action: openDue } );
+			}
+		}
 		targetsFor( card ).forEach( function ( v ) {
 			items.push( { label: sprintf( i18n.moveTo, laneLabel( v ) ), lane: v } );
 		} );
@@ -647,6 +656,12 @@
 			var control = item.href
 				? el( 'a', { role: 'menuitem', href: item.href, tabindex: -1, target: item.newTab ? '_blank' : null, rel: item.newTab ? 'noopener' : null, text: item.label } )
 				: el( 'button', { type: 'button', role: 'menuitem', tabindex: -1, text: item.label } );
+			if ( item.action ) {
+				control.addEventListener( 'click', function () {
+					closeMenu( false );
+					item.action( id );
+				} );
+			}
 			if ( item.lane ) {
 				control.addEventListener( 'click', function () {
 					closeMenu( false );
@@ -677,13 +692,12 @@
 			}
 		} );
 
-		button.parentNode.appendChild( menu );
+		// Float the menu on the page, anchored to the button. Inside the card it was clipped by the
+		// lane's scrolling list — in a short lane (e.g. filtered to one card) in BOTH directions,
+		// and it ended up under the lane header where it couldn't be clicked.
+		document.body.appendChild( menu );
+		placeMenu( menu, button );
 		button.setAttribute( 'aria-expanded', 'true' );
-		// The lane's card list scrolls (and so clips): near its bottom, open the menu upwards.
-		var clip = button.closest( '.bk-cards' );
-		if ( clip && menu.getBoundingClientRect().bottom > clip.getBoundingClientRect().bottom ) {
-			menu.classList.add( 'opens-up' );
-		}
 		openMenuState = { menu: menu, button: button };
 		var first = menu.querySelector( '[role="menuitem"]' );
 		if ( first ) {
@@ -691,10 +705,33 @@
 		}
 	}
 
+	/** Below the button, right-aligned to it; above it if there's no room below; kept on screen. */
+	function placeMenu( menu, button ) {
+		var r = button.getBoundingClientRect();
+		var m = menu.getBoundingClientRect();
+		var gap = 4;
+		var top = r.bottom + gap;
+		if ( top + m.height > window.innerHeight - gap && r.top - gap - m.height >= gap ) {
+			top = r.top - gap - m.height;
+		}
+		var left = Math.min( Math.max( gap, r.right - m.width ), window.innerWidth - m.width - gap );
+		menu.style.top = Math.max( gap, top ) + 'px';
+		menu.style.left = left + 'px';
+	}
+
 	document.addEventListener( 'click', function ( e ) {
 		if ( openMenuState && ! openMenuState.menu.contains( e.target ) ) {
 			closeMenu( false );
 		}
+	} );
+	// A floating menu would drift away from its card on scroll: close it instead.
+	window.addEventListener( 'scroll', function ( e ) {
+		if ( openMenuState && ! openMenuState.menu.contains( e.target ) ) {
+			closeMenu( false );
+		}
+	}, true );
+	window.addEventListener( 'resize', function () {
+		closeMenu( false );
 	} );
 
 	// ---- drag and drop ---------------------------------------------------------------------
@@ -713,7 +750,7 @@
 				},
 				sort: false, // Lanes are sorted by a field; no hand ordering in v1.
 				draggable: '.bk-card',
-				filter: '.bk-card-menu-btn, .bk-menu, .bk-when',
+				filter: '.bk-card-menu-btn, .bk-menu, .bk-when, .bk-form',
 				preventOnFilter: false,
 				ghostClass: 'is-ghost',
 				chosenClass: 'is-chosen',
@@ -770,29 +807,336 @@
 		} );
 	}
 
+	// ---- card forms: assign, due date --------------------------------------------------------
+
+	/** Replace a card with the server's version after a field save (or a 409). */
+	function swapCard( id, fresh ) {
+		var node = cardEl( id );
+		if ( ! node ) {
+			return;
+		}
+		var focus = node.contains( document.activeElement );
+		var next = renderCard( fresh );
+		node.replaceWith( next );
+		if ( focus ) {
+			next.focus();
+		}
+	}
+
+	/** A small form on a card. onSave( close, retry ) does the request. */
+	function cardForm( id, label, fields, onSave, extraButtons ) {
+		var node = cardEl( id );
+		if ( ! node || node.querySelector( '.bk-when, .bk-form' ) ) {
+			return null;
+		}
+		var save = el( 'button', { type: 'submit', class: 'button button-primary button-small', text: i18n.save } );
+		var cancel = el( 'button', { type: 'button', class: 'button button-small', text: i18n.cancel } );
+		var form = el( 'form', { class: 'bk-form', 'aria-label': label }, fields.concat( [ el( 'div', { class: 'bk-when-actions' }, [ save ].concat( extraButtons || [] ).concat( [ cancel ] ) ) ] ) );
+		function close() {
+			form.remove();
+			var n = cardEl( id );
+			if ( n ) {
+				n.focus();
+			}
+		}
+		cancel.addEventListener( 'click', close );
+		form.addEventListener( 'keydown', function ( e ) {
+			e.stopPropagation(); // keep the card's pick-up keys out of the form
+			if ( e.key === 'Escape' ) {
+				e.preventDefault();
+				close();
+			}
+		} );
+		form.addEventListener( 'submit', function ( e ) {
+			e.preventDefault();
+			save.disabled = true;
+			onSave( close, function () {
+				save.disabled = false;
+			} );
+		} );
+		node.appendChild( form );
+		return form;
+	}
+
+	function fieldError( err, id, close ) {
+		var current = err && err.code === 'bk_conflict' && err.data && err.data.card;
+		if ( current ) {
+			close();
+			swapCard( id, current );
+		}
+		showNotice( errorMessage( err ), current ? 'warning' : 'error' );
+		speak( errorMessage( err ) );
+	}
+
+	var peopleCache = {};
+	function fetchPeople( search ) {
+		var key = search || '';
+		if ( ! peopleCache[ key ] ) {
+			peopleCache[ key ] = apiFetch( { path: base + '/people?search=' + encodeURIComponent( key ) } ).then( function ( r ) {
+				return r.people;
+			} );
+		}
+		return peopleCache[ key ];
+	}
+
+	function openAssign( id ) {
+		var card = cards[ id ];
+		var chosen = {};
+		( card.assignees || [] ).forEach( function ( p ) {
+			chosen[ p.id ] = p;
+		} );
+		var searchId = 'bk-assign-search-' + id;
+		var search = el( 'input', { id: searchId, type: 'search', class: 'bk-when-input', placeholder: i18n.searchPeople } );
+		var list = el( 'div', { class: 'bk-people', role: 'group', 'aria-label': i18n.assignees } );
+
+		function draw( people ) {
+			list.textContent = '';
+			var shown = {};
+			Object.keys( chosen ).map( function ( k ) {
+				return chosen[ k ];
+			} ).concat( people ).forEach( function ( p ) {
+				if ( shown[ p.id ] ) {
+					return;
+				}
+				shown[ p.id ] = true;
+				var box = el( 'input', { type: 'checkbox', value: p.id, checked: !! chosen[ p.id ] } );
+				box.addEventListener( 'change', function () {
+					if ( box.checked ) {
+						chosen[ p.id ] = p;
+					} else {
+						delete chosen[ p.id ];
+					}
+				} );
+				list.appendChild( el( 'label', { class: 'bk-person' }, [ box, ' ', p.name ] ) );
+			} );
+			if ( ! list.childNodes.length ) {
+				list.appendChild( el( 'p', { class: 'bk-when-tz', text: i18n.noPeople } ) );
+			}
+		}
+
+		var timer = null;
+		search.addEventListener( 'input', function () {
+			clearTimeout( timer );
+			timer = setTimeout( function () {
+				fetchPeople( search.value.trim() ).then( draw );
+			}, 250 );
+		} );
+
+		var form = cardForm( id, sprintf( i18n.assignLabel, card.title ), [
+			el( 'label', { for: searchId, text: i18n.assignees } ),
+			search,
+			list,
+		], function ( close, retry ) {
+			apiFetch( {
+				path: base + '/cards/' + id + '/assignees',
+				method: 'POST',
+				data: {
+					user_ids: Object.keys( chosen ).map( Number ),
+					previous: ( card.assignees || [] ).map( function ( p ) {
+						return p.id;
+					} ),
+				},
+			} ).then( function ( res ) {
+				close();
+				swapCard( id, res.card );
+				showNotice( '' );
+				speak( i18n.saved );
+			} ).catch( function ( err ) {
+				retry();
+				fieldError( err, id, close );
+			} );
+		} );
+		if ( form ) {
+			fetchPeople( '' ).then( draw );
+			search.focus();
+		}
+	}
+
+	function openDue( id ) {
+		var card = cards[ id ];
+		var inputId = 'bk-due-' + id;
+		var previous = ( card.due && card.due.date ) || '';
+		var input = el( 'input', { id: inputId, type: 'date', class: 'bk-when-input', value: previous } );
+		var clear = el( 'button', { type: 'button', class: 'button button-small', text: i18n.clear } );
+		var form;
+		function send( date, close, retry ) {
+			apiFetch( {
+				path: base + '/cards/' + id + '/due',
+				method: 'POST',
+				data: { date: date, previous: previous },
+			} ).then( function ( res ) {
+				close();
+				swapCard( id, res.card );
+				showNotice( '' );
+				speak( i18n.saved );
+			} ).catch( function ( err ) {
+				retry();
+				fieldError( err, id, close );
+			} );
+		}
+		form = cardForm( id, sprintf( i18n.dueLabel, card.title ), [
+			el( 'label', { for: inputId, text: i18n.dueDate } ),
+			input,
+		], function ( close, retry ) {
+			send( input.value, close, retry );
+		}, [ clear ] );
+		if ( form ) {
+			clear.addEventListener( 'click', function () {
+				send( '', function () {
+					form.remove();
+				}, function () {} );
+			} );
+			input.focus();
+		}
+	}
+
+	// ---- filter bar (kept in the URL, spec §5.3) ----------------------------------------------
+
+	var FILTER_KEYS = [ 's', 'assignee', 'author', 'overdue' ];
+	var filters = {};
+	( function readUrl() {
+		var params = new URLSearchParams( window.location.search );
+		FILTER_KEYS.forEach( function ( k ) {
+			if ( params.get( k ) ) {
+				filters[ k ] = params.get( k );
+			}
+		} );
+	}() );
+
+	/** '?s=…&assignee=me' (or with another lead such as '&'); '' when there are no filters. */
+	function filterQuery( lead ) {
+		var parts = FILTER_KEYS.filter( function ( k ) {
+			return filters[ k ];
+		} ).map( function ( k ) {
+			return encodeURIComponent( k ) + '=' + encodeURIComponent( filters[ k ] );
+		} );
+		return parts.length ? ( lead || '?' ) + parts.join( '&' ) : '';
+	}
+
+	function writeUrl() {
+		var params = new URLSearchParams( window.location.search );
+		FILTER_KEYS.forEach( function ( k ) {
+			if ( filters[ k ] ) {
+				params.set( k, filters[ k ] );
+			} else {
+				params.delete( k );
+			}
+		} );
+		window.history.replaceState( null, '', window.location.pathname + '?' + params.toString() );
+	}
+
+	function setFilter( key, value ) {
+		if ( value ) {
+			filters[ key ] = value;
+		} else {
+			delete filters[ key ];
+		}
+		writeUrl();
+		loadBoard( true );
+	}
+
+	function buildFilterBar() {
+		function field( label, control ) {
+			return el( 'label', { class: 'bk-filter' }, [ el( 'span', { class: 'bk-filter-label', text: label } ), control ] );
+		}
+		var search = el( 'input', { type: 'search', class: 'bk-filter-search', value: filters.s || '', placeholder: i18n.searchCards } );
+		var timer = null;
+		search.addEventListener( 'input', function () {
+			clearTimeout( timer );
+			timer = setTimeout( function () {
+				setFilter( 's', search.value.trim() );
+			}, 350 );
+		} );
+
+		var assignee = el( 'select', {}, [
+			el( 'option', { value: '', text: i18n.anyone } ),
+			el( 'option', { value: 'me', text: i18n.me } ),
+		] );
+		var author = el( 'select', {}, [ el( 'option', { value: '', text: i18n.anyone } ) ] );
+		fetchPeople( '' ).then( function ( people ) {
+			people.forEach( function ( p ) {
+				assignee.appendChild( el( 'option', { value: p.id, text: p.name } ) );
+				author.appendChild( el( 'option', { value: p.id, text: p.name } ) );
+			} );
+			assignee.value = filters.assignee || '';
+			author.value = filters.author || '';
+		} ).catch( function () {} );
+		assignee.value = filters.assignee || '';
+		assignee.addEventListener( 'change', function () {
+			setFilter( 'assignee', assignee.value );
+		} );
+		author.addEventListener( 'change', function () {
+			setFilter( 'author', author.value );
+		} );
+
+		var overdue = el( 'input', { type: 'checkbox', checked: filters.overdue === '1' } );
+		overdue.addEventListener( 'change', function () {
+			setFilter( 'overdue', overdue.checked ? '1' : '' );
+		} );
+
+		var clearAll = el( 'button', { type: 'button', class: 'button-link bk-filter-clear', text: i18n.clearFilters } );
+		clearAll.addEventListener( 'click', function () {
+			filters = {};
+			search.value = '';
+			assignee.value = '';
+			author.value = '';
+			overdue.checked = false;
+			writeUrl();
+			loadBoard( true );
+		} );
+
+		return el( 'div', { class: 'bk-filters', role: 'search', 'aria-label': i18n.filters }, [
+			field( i18n.search, search ),
+			field( i18n.assignees, assignee ),
+			field( i18n.author, author ),
+			el( 'label', { class: 'bk-filter bk-filter-check' }, [ overdue, ' ', i18n.overdueOnly ] ),
+			clearAll,
+		] );
+	}
+
 	// ---- boot ------------------------------------------------------------------------------
 
+	root.parentNode.insertBefore( buildFilterBar(), root );
 	// Visible, not screen-reader-only: the keyboard path has to be discoverable for everyone.
 	root.parentNode.insertBefore( el( 'p', { id: 'bk-card-help', class: 'bk-tip', text: i18n.cardHelp } ), root );
 	document.body.appendChild( hint );
 
-	apiFetch( { path: base } )
-		.then( function ( board ) {
-			timezone = board.timezone || '';
-			root.textContent = '';
-			board.lanes.forEach( function ( lane ) {
-				root.appendChild( renderLane( lane ) );
+	/** (Re)load the whole board for the current filters. */
+	function loadBoard( announce ) {
+		disableDrag();
+		cancelPick( false );
+		closeMenu( false );
+		lanes = {};
+		laneOrder = [];
+		cards = {};
+		root.setAttribute( 'aria-busy', 'true' );
+		return apiFetch( { path: base + filterQuery( '?' ) } )
+			.then( function ( board ) {
+				timezone = board.timezone || '';
+				root.textContent = '';
+				board.lanes.forEach( function ( lane ) {
+					root.appendChild( renderLane( lane ) );
+				} );
+				root.removeAttribute( 'aria-busy' );
+				enableDrag();
+				return Promise.all( laneOrder.map( function ( v ) {
+					return loadLane( v, false );
+				} ) ).then( function () {
+					if ( announce ) {
+						var total = laneOrder.reduce( function ( n, v ) {
+							return n + lanes[ v ].count;
+						}, 0 );
+						speak( sprintf( i18n.filtered, total ) );
+					}
+				} );
+			} )
+			.catch( function ( err ) {
+				root.removeAttribute( 'aria-busy' );
+				root.textContent = '';
+				showNotice( errorMessage( err ) );
+				speak( errorMessage( err ) );
 			} );
-			root.removeAttribute( 'aria-busy' );
-			enableDrag();
-			return Promise.all( laneOrder.map( function ( v ) {
-				return loadLane( v, false );
-			} ) );
-		} )
-		.catch( function ( err ) {
-			root.removeAttribute( 'aria-busy' );
-			root.textContent = '';
-			showNotice( errorMessage( err ) );
-			speak( errorMessage( err ) );
-		} );
+	}
+
+	loadBoard( false );
 }() );

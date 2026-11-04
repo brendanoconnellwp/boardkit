@@ -31,8 +31,8 @@ final class BoardRepository {
 	/** Lane sources v1 understands. 'columnkit' is accepted so a stored board survives ColumnKit being off. */
 	public const LANE_KINDS = [ 'stage', 'status', 'taxonomy', 'author', 'columnkit' ];
 
-	/** Sort fields. 'due' joins in Phase 4. */
-	public const SORT_FIELDS = [ 'modified', 'date', 'title', 'menu_order' ];
+	/** Sort fields. 'due' puts posts without a due date last (Query\DueSort). */
+	public const SORT_FIELDS = [ 'modified', 'date', 'title', 'menu_order', 'due' ];
 
 	public const BUILTIN_FIELDS = [ 'author', 'status', 'assignees', 'due', 'stage', 'terms', 'thumbnail' ];
 

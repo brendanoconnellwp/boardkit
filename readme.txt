@@ -4,7 +4,7 @@ Tags: kanban, editorial calendar, workflow, editorial
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 8.0
-Stable tag: 0.3.1
+Stable tag: 0.4.0
 License: GPLv2 or later
 
 A Kanban board and editorial calendar for WordPress content.
@@ -16,6 +16,13 @@ BoardKit adds two views of your posts to wp-admin: a board (cards in lanes such 
 It works on its own. With ColumnKit active, boards can use a ColumnKit view as their card fields and any editable fixed-choice column as a lane source.
 
 == Changelog ==
+
+= 0.4.0 =
+* New: assign people to a post, and give it a due date, from the card's ⋯ menu (Assign…, Set due date…) or from the new Editorial box in the post editor. Only people who can edit the post can be assigned.
+* New: a filter bar on the board: search, Assigned to (Anyone / Me / a person), Author and Overdue only. Lane counts follow the filters, and filters stay in the page address, so a filtered board can be bookmarked or shared.
+* New: the Editorial box in the editor also sets the stage (it never changes the WordPress status; use the editor's Publish controls for that) and shows recent activity, such as "Moved to Editing by Sam, 2 hours ago".
+* New: boards can be sorted by due date. Posts without one come last.
+* Fixed: the card menu could be cut off, or end up behind the lane header, in lanes with only a card or two.
 
 = 0.3.1 =
 * Fixed: drag and drop didn't work when BoardKit was installed from the 0.3.0 release zip, because the drag library was left out of the zip. The keyboard and the ⋯ menu were unaffected.

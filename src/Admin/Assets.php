@@ -97,6 +97,28 @@ final class Assets {
 				'siteTime'   => __( 'Site time: %s', 'boardkit' ),
 				'schedule'   => __( 'Schedule', 'boardkit' ),
 				'cancel'     => __( 'Cancel', 'boardkit' ),
+				// Phase 4: assignees, due dates, filters.
+				'assign'       => __( 'Assign…', 'boardkit' ),
+				'setDue'       => __( 'Set due date…', 'boardkit' ),
+				'save'         => __( 'Save', 'boardkit' ),
+				'clear'        => __( 'Clear', 'boardkit' ),
+				'saved'        => __( 'Saved.', 'boardkit' ),
+				'searchPeople' => __( 'Search people', 'boardkit' ),
+				'noPeople'     => __( 'Nobody found.', 'boardkit' ),
+				/* translators: %s: post title */
+				'assignLabel'  => __( 'Assign people to “%s”', 'boardkit' ),
+				/* translators: %s: post title */
+				'dueLabel'     => __( 'Due date for “%s”', 'boardkit' ),
+				'dueDate'      => __( 'Due date', 'boardkit' ),
+				'filters'      => __( 'Filter cards', 'boardkit' ),
+				'search'       => __( 'Search', 'boardkit' ),
+				'searchCards'  => __( 'Search titles and content', 'boardkit' ),
+				'anyone'       => __( 'Anyone', 'boardkit' ),
+				'me'           => __( 'Me', 'boardkit' ),
+				'overdueOnly'  => __( 'Overdue only', 'boardkit' ),
+				'clearFilters' => __( 'Clear filters', 'boardkit' ),
+				/* translators: %d: number of cards */
+				'filtered'     => __( '%d cards match.', 'boardkit' ),
 			],
 		];
 		wp_add_inline_script( self::HANDLE, 'window.BoardKitConfig = ' . wp_json_encode( $config, self::JSON_FLAGS ) . ';', 'before' );

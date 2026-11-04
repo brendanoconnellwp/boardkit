@@ -99,6 +99,15 @@ if ( ! class_exists( 'WP_REST_Request' ) ) {
 		public function offsetUnset( mixed $k ): void { unset( $this->params[ $k ] ); }
 	}
 }
+if ( ! class_exists( 'WP_Query' ) ) {
+	/** Holds query vars only; never runs SQL (unit tests that need results use smoke tests). */
+	class WP_Query {
+		public array $posts = [];
+		public int $found_posts = 0;
+		public function __construct( public array $query_vars = [] ) {}
+		public function get( string $key, mixed $default = '' ): mixed { return $this->query_vars[ $key ] ?? $default; }
+	}
+}
 if ( ! class_exists( 'WP_REST_Response' ) ) {
 	class WP_REST_Response {
 		public function __construct( public mixed $data = null, public int $status = 200 ) {}

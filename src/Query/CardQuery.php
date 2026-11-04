@@ -34,7 +34,7 @@ final class CardQuery {
 	 * @param array<int,int>|null $visible From Visibility::visible_ids() (null = unrestricted).
 	 * @return array<string, mixed>
 	 */
-	public function build_args( Board $board, string $lane, int $offset, ?array $visible ): array {
+	public function build_args( Board $board, string $lane, int $offset, ?array $visible, ?Filters $filters = null ): array {
 		$source = $this->sources->for_board( $board );
 		$lane_args = $lane === Board::UNSORTED
 			? $source->query_args_for_unsorted( $board )
@@ -58,6 +58,12 @@ final class CardQuery {
 			// ID as tie-breaker: stable paging when many posts share a modified time.
 			'orderby'                => [ $orderby => $order, 'ID' => $order ],
 		];
+		if ( $sort['by'] === 'due' ) {
+			// Undated posts last in BOTH directions: done in SQL by DueSort (posts_clauses), because
+			// ordering by a meta clause puts NULLs first on ASC (PLAN §0 item 6).
+			$args['orderby']     = [ 'ID' => $order ];
+			$args['bk_due_sort'] = $order;
+		}
 		// The lane narrows post_status for status boards; otherwise keep the board's statuses.
 		$args = array_merge( $args, $lane_args );
 
@@ -69,12 +75,12 @@ final class CardQuery {
 			// post__in => [] means "no restriction" to WP_Query, so an empty set must be [0].
 			$args['post__in'] = $allowed === [] ? [ 0 ] : $allowed;
 		}
-		return $args;
+		return $filters ? $filters->apply( $args ) : $args;
 	}
 
 	/** @return array{posts: array<int, \WP_Post>, next_offset: int|null} */
-	public function page( Board $board, string $lane, int $offset ): array {
-		$args = $this->build_args( $board, $lane, $offset, $this->visibility->visible_ids( $board ) );
+	public function page( Board $board, string $lane, int $offset, ?Filters $filters = null ): array {
+		$args = $this->build_args( $board, $lane, $offset, $this->visibility->visible_ids( $board ), $filters );
 		// One extra row tells us whether there's a next page without a COUNT(*).
 		$args['posts_per_page'] = self::PER_PAGE + 1;
 		$posts                  = array_values( array_filter( (array) ( new \WP_Query( $args ) )->posts, static fn( $p ) => $p instanceof \WP_Post ) );
@@ -86,8 +92,8 @@ final class CardQuery {
 		];
 	}
 
-	public function count( Board $board, string $lane ): int {
-		$args = $this->build_args( $board, $lane, 0, $this->visibility->visible_ids( $board ) );
+	public function count( Board $board, string $lane, ?Filters $filters = null ): int {
+		$args = $this->build_args( $board, $lane, 0, $this->visibility->visible_ids( $board ), $filters );
 		$args = array_merge( $args, [
 			'fields'                 => 'ids',
 			'posts_per_page'         => 1,
@@ -96,15 +102,16 @@ final class CardQuery {
 			'update_post_meta_cache' => false,
 			'update_post_term_cache' => false,
 			'orderby'                => 'none',
+			'bk_due_sort'            => '',
 		] );
 		return (int) ( new \WP_Query( $args ) )->found_posts;
 	}
 
 	/** @return array<string, int> lane value (and Board::UNSORTED) => count */
-	public function counts( Board $board ): array {
+	public function counts( Board $board, ?Filters $filters = null ): array {
 		$out = [];
 		foreach ( array_merge( $board->lane_values(), [ Board::UNSORTED ] ) as $lane ) {
-			$out[ $lane ] = $this->count( $board, $lane );
+			$out[ $lane ] = $this->count( $board, $lane, $filters );
 		}
 		return $out;
 	}

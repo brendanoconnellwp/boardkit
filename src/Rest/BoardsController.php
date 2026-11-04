@@ -8,6 +8,7 @@ use BoardKit\Boards\BoardRepository;
 use BoardKit\Moves\StatusChange;
 use BoardKit\Query\CardPresenter;
 use BoardKit\Query\CardQuery;
+use BoardKit\Query\Filters;
 use BoardKit\Query\Visibility;
 use WP_Error;
 use WP_REST_Request;
@@ -70,7 +71,7 @@ final class BoardsController {
 
 	public function get_board( WP_REST_Request $request ): WP_REST_Response {
 		$board  = $this->board( $request );
-		$counts = $this->cards->counts( $board );
+		$counts = $this->cards->counts( $board, self::filters( $request ) );
 		return new WP_REST_Response( self::board_payload( $board, $counts ) );
 	}
 
@@ -81,7 +82,7 @@ final class BoardsController {
 		if ( $lane !== Board::UNSORTED && ! $board->has_lane( $lane ) ) {
 			return new WP_Error( 'bk_no_lane', __( 'Lane not found.', 'boardkit' ), [ 'status' => 404 ] );
 		}
-		$page = $this->cards->page( $board, $lane, (int) $request['offset'] );
+		$page = $this->cards->page( $board, $lane, (int) $request['offset'], self::filters( $request ) );
 		return new WP_REST_Response( [
 			'lane'        => $lane,
 			'cards'       => $this->presenter->cards( $page['posts'], $board ),
@@ -121,6 +122,16 @@ final class BoardsController {
 			'per_page'  => CardQuery::PER_PAGE,
 			'timezone'  => self::timezone_label(),
 		];
+	}
+
+	/** Filter-bar params (s, assignee, author, overdue) — allowlisted in Filters. */
+	public static function filters( WP_REST_Request $request ): Filters {
+		return Filters::from_params( [
+			's'        => $request['s'] ?? '',
+			'assignee' => $request['assignee'] ?? '',
+			'author'   => $request['author'] ?? '',
+			'overdue'  => $request['overdue'] ?? '',
+		] );
 	}
 
 	/** e.g. "UTC+10" or "Australia/Sydney" — shown next to the date picker (dates are site time). */

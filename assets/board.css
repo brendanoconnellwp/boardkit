@@ -130,11 +130,12 @@
 }
 
 .bk-menu {
-	position: absolute;
-	z-index: 100;
-	top: 34px;
-	right: 6px;
+	position: fixed; /* placed by placeMenu(): on the page, never clipped by a lane */
+	z-index: 100000;
 	min-width: 180px;
+	max-width: calc(100vw - 8px);
+	max-height: calc(100vh - 8px);
+	overflow-y: auto;
 	margin: 0;
 	padding: 4px 0;
 	list-style: none;
@@ -146,11 +147,6 @@
 
 .bk-menu li {
 	margin: 0;
-}
-
-.bk-menu.opens-up {
-	top: auto;
-	bottom: calc(100% - 30px);
 }
 
 .bk-menu [role="menuitem"] {
@@ -325,7 +321,73 @@
 
 .bk-when-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 6px;
+}
+
+/* Assign / due date forms on a card (same look as the schedule picker). */
+.bk-form {
+	display: grid;
+	gap: 6px;
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid #dcdcde;
+	cursor: default;
+}
+
+.bk-form > label {
+	font-weight: 600;
+}
+
+.bk-people {
+	max-height: 160px;
+	overflow-y: auto;
+	padding: 4px;
+	border: 1px solid #dcdcde;
+	border-radius: 3px;
+}
+
+.bk-person {
+	display: block;
+	padding: 2px 0;
+}
+
+/* Filter bar (spec §5.3). */
+.bk-filters {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 12px;
+	margin: 12px 0 0;
+	padding: 10px 12px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+}
+
+.bk-filter {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.bk-filter-label {
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bk-filter-check {
+	flex-direction: row;
+	align-items: center;
+	padding-bottom: 6px;
+}
+
+.bk-filter-search {
+	min-width: 220px;
+}
+
+.bk-filter-clear {
+	padding-bottom: 6px;
 }
 
 .bk-board-link .dashicons {
