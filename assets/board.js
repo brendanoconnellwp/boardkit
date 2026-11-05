@@ -1578,9 +1578,26 @@
 			] ) );
 		}
 
+		// Phase 6: the SEO plugin's meta description, if one is active.
+		var metaInput = null;
+		if ( d.seo ) {
+			metaInput = el( 'textarea', { id: 'bk-p-meta', class: 'widefat', rows: 3, maxlength: 320, 'aria-describedby': 'bk-p-meta-help', text: d.seo.description } );
+			form.appendChild( el( 'p', { class: 'bk-panel-field' }, [
+				el( 'label', { for: 'bk-p-meta', text: sprintf( pi18n.metaLabel, d.seo.plugin ) } ),
+				metaInput,
+				el( 'span', { id: 'bk-p-meta-help', class: 'bk-panel-help', text: pi18n.metaHelp } ),
+			] ) );
+		}
+
 		var save = el( 'button', { type: 'submit', class: 'button button-primary', text: pi18n.saveDetails, disabled: locked } );
-		if ( titleInput || excerptInput ) {
+		if ( titleInput || excerptInput || metaInput ) {
 			form.appendChild( el( 'p', { class: 'bk-panel-actions' }, [ save ] ) );
+		}
+
+		if ( d.ai && ! locked ) {
+			form.appendChild( aiSection( d, { title: titleInput, excerpt: excerptInput, meta: metaInput }, function () {
+				return changes();
+			} ) );
 		}
 
 		// Featured image: chosen in the core media modal, saved at once (like the editor does).
@@ -1625,6 +1642,9 @@
 			if ( excerptInput && excerptInput.value.trim() !== d.excerpt.trim() ) {
 				c.excerpt = excerptInput.value;
 			}
+			if ( metaInput && metaInput.value.trim() !== d.seo.description.trim() ) {
+				c.meta_description = metaInput.value;
+			}
 			return c;
 		}
 		panel.form = {
@@ -1655,6 +1675,138 @@
 			} );
 		} );
 		panel.body.appendChild( form );
+	}
+
+	/**
+	 * Phase 6: AI suggestions. The server builds the prompt from the SAVED post; the browser only
+	 * names the kind. "Use" fills a field — nothing is saved until Save details — except the
+	 * outline's own "Add to the post", which appends (never replaces) and saves.
+	 */
+	function aiSection( d, inputs, pendingChanges ) {
+		var id = panel.id;
+		var a = pi18n.ai || {};
+		var left = el( 'span', { class: 'bk-panel-help bk-ai-left' } );
+		var result = el( 'div', { class: 'bk-ai-result', role: 'region', 'aria-live': 'polite', 'aria-label': a.results } );
+		var buttons = el( 'div', { class: 'bk-when-actions bk-ai-buttons' } );
+		var kinds = [];
+		if ( inputs.title ) {
+			kinds.push( [ 'titles', a.titles ] );
+		}
+		if ( inputs.excerpt ) {
+			kinds.push( [ 'excerpt', a.excerpt ] );
+		}
+		if ( inputs.meta || inputs.excerpt ) {
+			kinds.push( [ 'meta', a.meta ] );
+		}
+		if ( d.supports.editor ) {
+			kinds.push( [ 'outline', a.outline ] );
+		}
+
+		function setLeft( n ) {
+			left.textContent = sprintf( a.left, n );
+			Array.prototype.forEach.call( buttons.children, function ( b ) {
+				b.disabled = n <= 0;
+			} );
+		}
+
+		function fill( input, value, label ) {
+			input.value = value;
+			input.focus();
+			speak( sprintf( a.filled, label ) );
+			panelNotice( sprintf( a.filled, label ), 'info' );
+		}
+
+		function choice( text, onUse, useLabel ) {
+			var use = el( 'button', { type: 'button', class: 'button button-small', text: useLabel || a.use } );
+			use.addEventListener( 'click', onUse );
+			return el( 'li', { class: 'bk-ai-choice' }, [ el( 'span', { class: 'bk-ai-text', text: text } ), use ] );
+		}
+
+		function show( kind, list ) {
+			result.textContent = '';
+			var ul = el( 'ul', { class: 'bk-ai-list' } );
+			if ( kind === 'titles' ) {
+				list.forEach( function ( s ) {
+					ul.appendChild( choice( s, function () {
+						fill( inputs.title, s, pi18n.title );
+					} ) );
+				} );
+			} else if ( kind === 'excerpt' ) {
+				ul.appendChild( choice( list[ 0 ], function () {
+					fill( inputs.excerpt, list[ 0 ], pi18n.excerpt );
+				} ) );
+			} else if ( kind === 'meta' ) {
+				var target = inputs.meta || inputs.excerpt;
+				ul.appendChild( choice( list[ 0 ], function () {
+					fill( target, list[ 0 ], inputs.meta ? a.metaShort : pi18n.excerpt );
+				}, inputs.meta ? a.use : a.useAsExcerpt ) );
+			} else {
+				list.forEach( function ( s ) {
+					ul.appendChild( el( 'li', { class: 'bk-ai-choice' }, [ el( 'span', { class: 'bk-ai-text', text: s } ) ] ) );
+				} );
+			}
+			result.appendChild( el( 'p', { class: 'bk-panel-label', text: a.heading[ kind ] } ) );
+			result.appendChild( ul );
+			if ( kind === 'outline' ) {
+				var add = el( 'button', { type: 'button', class: 'button', text: a.addOutline } );
+				add.addEventListener( 'click', function () {
+					add.disabled = true;
+					// Send any unsaved title/excerpt edits too, so the re-render doesn't drop them.
+					var c = pendingChanges();
+					c.append_outline = list;
+					saveDetails( c ).then( function () {
+						renderDetails();
+						panelNotice( a.outlineAdded, 'success' );
+						speak( a.outlineAdded );
+					}, function () {
+						add.disabled = false;
+					} );
+				} );
+				result.appendChild( el( 'p', {}, [ add, ' ', el( 'span', { class: 'bk-panel-help', text: a.outlineHelp } ) ] ) );
+			}
+		}
+
+		kinds.forEach( function ( k ) {
+			var b = el( 'button', { type: 'button', class: 'button', text: k[ 1 ] } );
+			b.addEventListener( 'click', function () {
+				var label = b.textContent;
+				Array.prototype.forEach.call( buttons.children, function ( x ) {
+					x.disabled = true;
+				} );
+				b.textContent = a.thinking;
+				result.setAttribute( 'aria-busy', 'true' );
+				speak( a.thinking );
+				apiFetch( { path: base + '/cards/' + id + '/suggest', method: 'POST', data: { kind: k[ 0 ] } } ).then( function ( res ) {
+					if ( ! panel || panel.id !== id ) {
+						return;
+					}
+					b.textContent = label;
+					result.removeAttribute( 'aria-busy' );
+					setLeft( res.remaining );
+					panelNotice( '' );
+					show( k[ 0 ], res.suggestions );
+				}, function ( err ) {
+					if ( ! panel || panel.id !== id ) {
+						return;
+					}
+					b.textContent = label;
+					result.removeAttribute( 'aria-busy' );
+					setLeft( err && err.code === 'bk_ai_limit' ? 0 : d.ai.remaining );
+					panelNotice( errorMessage( err ) );
+					speak( errorMessage( err ) );
+				} );
+			} );
+			buttons.appendChild( b );
+		} );
+		setLeft( d.ai.remaining );
+
+		return el( 'div', { class: 'bk-panel-field bk-ai' }, [
+			el( 'span', { class: 'bk-panel-label', text: a.label } ),
+			el( 'span', { class: 'bk-panel-help', text: a.help } ),
+			buttons,
+			left,
+			result,
+		] );
 	}
 
 	function drawImage( box ) {

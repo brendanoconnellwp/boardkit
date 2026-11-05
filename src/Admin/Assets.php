@@ -157,6 +157,36 @@ final class Assets {
 					'left'         => __( 'The editor left this post, so the panel was closed.', 'boardkit' ),
 					'noChanges'    => __( 'Nothing to save.', 'boardkit' ),
 					'unsavedDetails' => __( 'You have unsaved changes to the details.', 'boardkit' ),
+					/* translators: %s: SEO plugin name, e.g. "Yoast SEO" */
+					'metaLabel'    => __( 'Meta description (%s)', 'boardkit' ),
+					'metaHelp'     => __( 'Shown under the title in search results. About 150 characters works best.', 'boardkit' ),
+					// Phase 6: AI suggestions.
+					'ai'           => [
+						'label'        => __( 'AI suggestions', 'boardkit' ),
+						'help'         => __( 'Uses this site’s AI connection and the post as last saved. Nothing changes until you choose a suggestion and save.', 'boardkit' ),
+						'titles'       => __( 'Suggest titles', 'boardkit' ),
+						'excerpt'      => __( 'Write excerpt', 'boardkit' ),
+						'meta'         => __( 'Write meta description', 'boardkit' ),
+						'outline'      => __( 'Outline', 'boardkit' ),
+						'thinking'     => __( 'Thinking…', 'boardkit' ),
+						/* translators: %d: number of AI suggestions left */
+						'left'         => __( '%d left this hour.', 'boardkit' ),
+						'results'      => __( 'AI suggestions', 'boardkit' ),
+						'use'          => __( 'Use', 'boardkit' ),
+						'useAsExcerpt' => __( 'Use as excerpt', 'boardkit' ),
+						'metaShort'    => __( 'Meta description', 'boardkit' ),
+						/* translators: %s: field name, e.g. "Title" */
+						'filled'       => __( '%s filled in. Press Save details to keep it.', 'boardkit' ),
+						'addOutline'   => __( 'Add to the post', 'boardkit' ),
+						'outlineHelp'  => __( 'Added as headings at the end of the post. Nothing already there is changed.', 'boardkit' ),
+						'outlineAdded' => __( 'Outline added to the post.', 'boardkit' ),
+						'heading'      => [
+							'titles'  => __( 'Title ideas', 'boardkit' ),
+							'excerpt' => __( 'Excerpt', 'boardkit' ),
+							'meta'    => __( 'Meta description', 'boardkit' ),
+							'outline' => __( 'Outline', 'boardkit' ),
+						],
+					],
 				],
 				'addCard'      => __( '+ Add card', 'boardkit' ),
 				'add'          => __( 'Add', 'boardkit' ),

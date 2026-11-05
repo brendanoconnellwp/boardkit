@@ -537,6 +537,43 @@ body.bk-panel-writing .bk-panel-body {
 	border-radius: 2px;
 }
 
+/* AI suggestions (Phase 6). */
+.bk-ai {
+	margin-top: 16px;
+	padding: 12px;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+}
+
+.bk-ai-buttons {
+	margin: 8px 0 4px;
+}
+
+.bk-ai-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.bk-ai-choice {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 0;
+	padding: 6px 0;
+	border-top: 1px solid #dcdcde;
+}
+
+.bk-ai-text {
+	flex: 1 1 auto;
+	word-wrap: break-word;
+}
+
+.bk-ai-result[aria-busy="true"] {
+	opacity: 0.6;
+}
+
 .bk-panel-links {
 	margin-top: 16px;
 	padding-top: 12px;

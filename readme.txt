@@ -4,7 +4,7 @@ Tags: kanban, editorial calendar, workflow, editorial
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 8.0
-Stable tag: 0.5.0
+Stable tag: 0.6.0
 License: GPLv2 or later
 
 A Kanban board and editorial calendar for WordPress content.
@@ -16,6 +16,14 @@ BoardKit adds two views of your posts to wp-admin: a board (cards in lanes such 
 It works on its own. With ColumnKit active, boards can use a ColumnKit view as their card fields and any editable fixed-choice column as a lane source.
 
 == Changelog ==
+
+= 0.6.0 =
+* New: AI suggestions in the card panel, using the AI connection set up in WordPress (Settings → Connectors, WordPress 7.0 or later): suggest titles, write an excerpt, write a meta description, and outline a post.
+* Suggestions are never saved on their own. "Use" fills in the field, and you press Save details to keep it. "Add to the post" adds an outline as headings at the end of the post and never changes what's already there.
+* New: when Yoast SEO, Rank Math or SEOPress is active, the panel shows that plugin's meta description field. Without one, the meta description suggestion can be used as the excerpt.
+* Each person can ask for 20 suggestions an hour (change it with the `boardkit/ai_hourly_limit` filter), because every request costs money on the site's AI account. Turn suggestions off completely with the `boardkit/ai_enabled` filter.
+* Privacy: asking for a suggestion sends the post's title, excerpt and text to the AI provider connected to the site.
+* If no AI is connected, nothing changes and the AI section doesn't appear.
 
 = 0.5.0 =
 * New: click a card's title to open it in a panel beside the board. The board stays usable while it's open, so you can keep dragging cards. Ctrl/Cmd-click still opens the full editor.

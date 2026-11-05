@@ -181,6 +181,10 @@ Click a card to open a side panel (like a Notion page peek). The board stays usa
   per call).
 - Meta description: the excerpt by default, or the active SEO plugin's field when one is detected (Yoast, Rank Math,
   SEOPress).
+- **Built (v0.6.0, 2026-11-05):** titles, excerpt, meta description and outline (appended as heading blocks, never
+  replacing content). Featured-image generation is **deferred**: the dev site's provider (OpenRouter through core) reports
+  `is_supported_for_image_generation() === false`, so it can't be tested. Add it when a provider with image support is
+  available, saving through `media_handle_sideload` and the existing `featured_media` path.
 
 ### Phase 7 — Board settings (v0.7.0)
 - `Admin\SettingsPage` (admin-post handlers, `manage_options` + nonce): create, rename, duplicate, delete board; lane editor

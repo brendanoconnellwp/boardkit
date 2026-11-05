@@ -89,6 +89,6 @@ closes the panel (item 8).
 ## Manual checklist
 - [x] Role matrix for create, details, lock and image: smoke `phase5` (27 checks).
 - [x] Panel, guard, add card, deep link and phone width in the test page (fake `apiFetch`, fake editor).
-- [ ] **The real block editor in the panel** (needs a login): it fills the panel with no admin chrome, saves work,
+- [x] **The real block editor in the panel** (user confirmed 2026-11-05) (needs a login): it fills the panel with no admin chrome, saves work,
   "Save and continue" works, and the post lock is released when the panel closes.
 - [ ] The classic editor in the panel (with Classic Editor active): a save keeps the panel layout.

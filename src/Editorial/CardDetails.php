@@ -3,6 +3,8 @@ declare( strict_types=1 );
 
 namespace BoardKit\Editorial;
 
+use BoardKit\Ai\Assistant;
+use BoardKit\Ai\SeoMeta;
 use BoardKit\Moves\MoveService;
 use WP_Error;
 
@@ -15,8 +17,9 @@ use WP_Error;
  *     timestamp is a real version (unlike stage/meta writes);
  *   - refused while another user holds the editor's post lock — their next save would
  *     silently overwrite ours;
- *   - only title / excerpt / thumbnail are ever written. Status, date and content are never
- *     passed to wp_update_post, so the panel can't publish anything;
+ *   - only title / excerpt / thumbnail (and, Phase 6, an appended AI outline and the SEO
+ *     plugin's meta description) are ever written. Status and date are never passed to
+ *     wp_update_post, so the panel can't publish anything; content is only ever appended to;
  *   - wp_update_post() UNSLASHES its input, so the values are wp_slash()ed first, or a title
  *     like `C:\temp` would lose its backslash.
  */
@@ -46,7 +49,33 @@ final class CardDetails {
 			'can_upload' => current_user_can( 'upload_files' ),
 			'locked_by'  => $user ? (string) $user->display_name : '',
 			'editor_url' => $edit !== '' ? add_query_arg( 'bk_panel', '1', $edit ) : '',
+			// Phase 6: the active SEO plugin's meta description ('seo' null = none, use the excerpt).
+			'seo'        => ( $seo = SeoMeta::target() ) ? [ 'plugin' => $seo['plugin'], 'description' => SeoMeta::read( $post->ID ) ] : null,
+			'ai'         => Assistant::available() && current_user_can( 'edit_post', $post->ID ) ? [ 'remaining' => Assistant::remaining() ] : null,
 		];
+	}
+
+	/**
+	 * Outline lines ("Heading — what it covers") as blocks appended to the content. Text is
+	 * escaped: it came from an AI model.
+	 *
+	 * @param array<int, string> $lines
+	 */
+	public static function outline_blocks( array $lines ): string {
+		$out = '';
+		foreach ( $lines as $line ) {
+			$parts   = preg_split( '/\s+[—–-]\s+/u', trim( (string) $line ), 2 );
+			$heading = trim( (string) ( $parts[0] ?? '' ) );
+			$note    = trim( (string) ( $parts[1] ?? '' ) );
+			if ( $heading === '' ) {
+				continue;
+			}
+			$out .= "<!-- wp:heading -->\n<h2 class=\"wp-block-heading\">" . esc_html( $heading ) . "</h2>\n<!-- /wp:heading -->\n\n";
+			if ( $note !== '' ) {
+				$out .= "<!-- wp:paragraph -->\n<p>" . esc_html( $note ) . "</p>\n<!-- /wp:paragraph -->\n\n";
+			}
+		}
+		return $out;
 	}
 
 	/**
@@ -88,6 +117,29 @@ final class CardDetails {
 			}
 		}
 
+		// Phase 6: an AI outline, appended to the content — never replacing what's there.
+		if ( array_key_exists( 'append_outline', $changes ) ) {
+			if ( ! post_type_supports( (string) $post->post_type, 'editor' ) ) {
+				return MoveService::error( 'bk_no_editor', __( 'This post type has no content to add to.', 'boardkit' ), 400 );
+			}
+			$blocks = self::outline_blocks( array_slice( array_map( 'strval', (array) $changes['append_outline'] ), 0, 10 ) );
+			if ( $blocks !== '' ) {
+				$current             = rtrim( (string) $post->post_content );
+				$row['post_content'] = ( $current !== '' ? $current . "\n\n" : '' ) . rtrim( $blocks );
+			}
+		}
+
+		$meta = null;
+		if ( array_key_exists( 'meta_description', $changes ) ) {
+			if ( SeoMeta::target() === null ) {
+				return MoveService::error( 'bk_no_seo', __( 'No SEO plugin is active, so there’s no meta description field.', 'boardkit' ), 400 );
+			}
+			$meta = trim( (string) $changes['meta_description'] );
+			if ( mb_strlen( $meta ) > SeoMeta::MAX ) {
+				return MoveService::error( 'bk_too_long', __( 'That meta description is too long.', 'boardkit' ), 400 );
+			}
+		}
+
 		// Check the image before writing anything, so a bad image doesn't leave half a save.
 		$thumb = null;
 		if ( array_key_exists( 'featured_media', $changes ) ) {
@@ -109,6 +161,9 @@ final class CardDetails {
 			if ( $saved instanceof WP_Error ) {
 				return MoveService::error( 'bk_save_failed', $saved->get_error_message(), 500 );
 			}
+		}
+		if ( $meta !== null ) {
+			SeoMeta::write( $post->ID, $meta );
 		}
 		if ( $thumb !== null ) {
 			if ( $thumb > 0 ) {

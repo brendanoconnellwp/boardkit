@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace BoardKit\Rest;
 
+use BoardKit\Ai\Assistant;
 use BoardKit\Boards\Board;
 use BoardKit\Boards\BoardRepository;
 use BoardKit\Editorial\Assignees;
@@ -25,7 +26,8 @@ use WP_REST_Response;
  *   GET  boardkit/v1/boards/{id}/people?search=             users who can edit this post type
  *   POST boardkit/v1/boards/{id}/cards                      { title, lane } "+ Add card" (201)
  *   GET  boardkit/v1/boards/{id}/cards/{post_id}            card + panel details
- *   POST boardkit/v1/boards/{id}/cards/{post_id}/details    { title?, excerpt?, featured_media?, modified }
+ *   POST boardkit/v1/boards/{id}/cards/{post_id}/details    { title?, excerpt?, featured_media?, meta_description?, append_outline?, modified }
+ *   POST boardkit/v1/boards/{id}/cards/{post_id}/suggest    { kind: titles|excerpt|meta|outline } AI suggestions, not saved
  *
  * Assignee and due routes sit under the board (spec had /cards/{id}/…) so the response can be a
  * card for that board and the permission gate is the same as for moves. `previous` is what the
@@ -106,7 +108,21 @@ final class CardsController {
 				'title'          => [ 'type' => 'string' ],
 				'excerpt'        => [ 'type' => 'string' ],
 				'featured_media' => [ 'type' => 'integer', 'minimum' => 0 ],
+				// Phase 6: accepted AI output. Outline lines are appended to the content (escaped);
+				// the meta description goes to the active SEO plugin's field.
+				'meta_description' => [ 'type' => 'string' ],
+				'append_outline'   => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'maxItems' => 10 ],
 				'modified'       => [ 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ],
+			],
+		] );
+
+		// Phase 6: AI suggestions. Only a KIND is accepted — the prompt is built on the server.
+		register_rest_route( BoardsController::NAMESPACE, $card . '/suggest', [
+			'methods'             => 'POST',
+			'callback'            => [ $this, 'suggest' ],
+			'permission_callback' => [ $this, 'can_view' ],
+			'args'                => [
+				'kind' => [ 'type' => 'string', 'required' => true, 'enum' => Assistant::KINDS ],
 			],
 		] );
 
@@ -193,6 +209,16 @@ final class CardsController {
 		return new WP_REST_Response( [ 'card' => $this->presenter->card( $post, $board ), 'details' => CardDetails::read( $post ) ] );
 	}
 
+	public function suggest( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$board = $this->boards->get( (string) $request['id'] );
+		$post  = $board ? $this->editable_post( $board, (int) $request['post_id'] ) : MoveService::error( 'bk_no_board', __( 'Board not found.', 'boardkit' ), 404 );
+		if ( $post instanceof WP_Error ) {
+			return $post;
+		}
+		$result = Assistant::suggest( $post, (string) $request['kind'] );
+		return $result instanceof WP_Error ? $result : new WP_REST_Response( $result );
+	}
+
 	public function save_details( WP_REST_Request $request ): WP_REST_Response|WP_Error {
 		$board = $this->boards->get( (string) $request['id'] );
 		$post  = $board ? $this->editable_post( $board, (int) $request['post_id'] ) : MoveService::error( 'bk_no_board', __( 'Board not found.', 'boardkit' ), 404 );
@@ -200,7 +226,7 @@ final class CardsController {
 			return $post;
 		}
 		$changes = [];
-		foreach ( [ 'title', 'excerpt', 'featured_media' ] as $key ) {
+		foreach ( [ 'title', 'excerpt', 'featured_media', 'meta_description', 'append_outline' ] as $key ) {
 			if ( $request->has_param( $key ) ) {
 				$changes[ $key ] = $request[ $key ];
 			}
