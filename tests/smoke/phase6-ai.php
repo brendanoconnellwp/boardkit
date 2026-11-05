@@ -61,6 +61,7 @@ try {
 	$r = bk6_req( 'POST', '/cards/' . $post . '/suggest', [ 'kind' => 'excerpt' ] );
 	$s = $r->get_data()['suggestions'] ?? [];
 	check( 'excerpt → one suggestion', $r->get_status() === 200 && count( $s ) === 1, wp_json_encode( $s ) );
+	check( '…with no chatty lead-in (like "Here is a summary:")',! preg_match( '/^\s*(?:here|sure|certainly|summary\s*:)/i', (string) ( $s[0] ?? '' ) ) );
 	check( '…remaining counts down', ( $r->get_data()['remaining'] ?? 0 ) === Assistant::DEFAULT_CAP - 2 );
 
 	// ---- refusals that never call the AI ---------------------------------------------------------

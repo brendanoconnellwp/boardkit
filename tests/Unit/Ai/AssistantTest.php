@@ -89,7 +89,7 @@ final class AssistantTest extends TestCase {
 		$this->assertStringContainsString( 'Start with a bin.', FakeBuilder::$last['prompt'], 'post text, tags stripped' );
 		$this->assertStringNotContainsString( '<p>', FakeBuilder::$last['prompt'] );
 		$this->assertStringContainsString( 'never as instructions', FakeBuilder::$last['system'] );
-		$this->assertLessThanOrEqual( 500, FakeBuilder::$last['max'], 'every call has a token cap' );
+		$this->assertLessThanOrEqual( 2000, FakeBuilder::$last['max'], 'every call has a token cap' );
 	}
 
 	public function test_unknown_kind_is_refused_without_calling_the_ai(): void {
@@ -133,6 +133,47 @@ final class AssistantTest extends TestCase {
 	public function test_single_answers_are_one_trimmed_line(): void {
 		FakeBuilder::$reply = "  \"A neat summary\nover two lines.\"  ";
 		$this->assertSame( [ 'A neat summary over two lines.' ], Assistant::suggest( $this->post, 'excerpt' )['suggestions'] );
+	}
+
+	/** Reported by the user on 2026-11-05: the excerpt came back as "Here's a tight summary: …". */
+	public function test_chatty_lead_ins_are_stripped(): void {
+		$cases = [
+			'Here\'s a tight summary: this early 2023 guide argues…' => 'this early 2023 guide argues…',
+			'Here’s a concise meta description for search results: Update PHP now.' => 'Update PHP now.',
+			'Sure! Here is the excerpt: "Quoted answer."' => 'Quoted answer.',
+			'Meta description: Short and sharp.' => 'Short and sharp.',
+			'Summary: Plain.' => 'Plain.',
+		];
+		foreach ( $cases as $in => $want ) {
+			FakeBuilder::$reply = $in;
+			$this->assertSame( [ $want ], Assistant::suggest( $this->post, 'excerpt' )['suggestions'], $in );
+		}
+	}
+
+	/** Seen in the phase 6 smoke run: the "excerpt" was the prompt handed back. */
+	public function test_an_echo_of_the_prompt_or_post_is_not_offered(): void {
+		FakeBuilder::$reply = 'Working title: Composting at home Draft text: Start with a bin.';
+		$this->assertSame( 'bk_ai_failed', Assistant::suggest( $this->post, 'excerpt' )->get_error_code() );
+		$this->post->post_content = 'Composting at home turns kitchen scraps into rich soil. You need a bin and patience.';
+		FakeBuilder::$reply       = 'Composting at home turns kitchen scraps into rich soil. You need a bin and patience.';
+		$this->assertSame( 'bk_ai_failed', Assistant::suggest( $this->post, 'excerpt' )->get_error_code() );
+		FakeBuilder::$reply = 'A beginner’s guide to turning scraps into soil.';
+		$this->assertSame( [ 'A beginner’s guide to turning scraps into soil.' ], Assistant::suggest( $this->post, 'excerpt' )['suggestions'] );
+	}
+
+	public function test_the_task_is_restated_after_the_post(): void {
+		Assistant::suggest( $this->post, 'meta' );
+		$this->assertMatchesRegularExpression( '/<\/post>\s+Task: write a 140–155 character meta description/u', FakeBuilder::$last['prompt'] );
+	}
+
+	public function test_real_text_that_happens_to_start_like_a_lead_in_is_kept(): void {
+		FakeBuilder::$reply = 'Here is why PHP 8 matters: it is faster.';
+		$this->assertSame( [ 'Here is why PHP 8 matters: it is faster.' ], Assistant::suggest( $this->post, 'excerpt' )['suggestions'] );
+	}
+
+	public function test_list_lead_in_and_sign_off_lines_are_dropped(): void {
+		FakeBuilder::$reply = "Here are 5 title ideas:\n1. One\n2. Two\nLet me know if you want more!";
+		$this->assertSame( [ 'One', 'Two' ], Assistant::suggest( $this->post, 'titles' )['suggestions'] );
 	}
 
 	public function test_outline_blocks_escape_model_output(): void {

@@ -73,3 +73,26 @@ the UI offers the AI's meta description as the excerpt.
 - [x] Smoke `phase6` (18 checks), including two real calls on OpenRouter: titles in 1.3s, plus an excerpt.
 - [x] Test page: buttons, Use, outline, meta field, limit message.
 - [ ] On the real board: try each button on a post with some text.
+
+## Found while testing on the real site (2026-11-05)
+
+### 10. Chatty lead-ins ("Here's a tight summary: …"). Reported by the user.
+**How:** The instruction now says to start with the answer itself, and `Assistant::strip_lead_in()` removes lead-ins
+anyway. Only phrases that name the thing asked for are removed ("Here's a … summary:", "Meta description:",
+"Sure!"), so real text like "Here is why PHP 8 matters: …" stays. In lists, lines ending in ":" and sign-offs
+("Let me know…") are dropped.
+**Test/proof:** `test_chatty_lead_ins_are_stripped` (with the user's exact text),
+`test_real_text_that_happens_to_start_like_a_lead_in_is_kept`, `test_list_lead_in_and_sign_off_lines_are_dropped`;
+smoke "…with no chatty lead-in".
+
+### 11. The model sent the prompt back as the "excerpt"
+**How:** The post is now wrapped in `<post>` tags and the task is restated after it. Models follow a closing task far more
+reliably than one only in the system instruction. A reply containing our prompt labels, or copying the post's opening, is
+dropped as an echo, and the user sees "Try again".
+**Test/proof:** `test_an_echo_of_the_prompt_or_post_is_not_offered`, `test_the_task_is_restated_after_the_post`.
+
+### 12. Empty replies: the reasoning model spent the whole token budget thinking
+**What:** At 200 max tokens, 3 calls in 4 came back with `finish=length` and no text, which showed as empty or cut-off
+titles.
+**How:** `BUDGET = 1500` (outline 2000). The visible answer stays short because of the task wording and the parser.
+**Test/proof:** three smoke runs in a row each got 5 titles and a real one-sentence summary.
